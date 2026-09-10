@@ -15,6 +15,7 @@ import documentRouter from "./src/routes/document.route.js";
 import notesRouter from "./src/routes/notes.routes.js";
 import timeLineRouter from "./src/routes/timeLine.route.js";
 import "./src/jobs/sessionReminder.job.js";
+import dashboardRouter from "./src/routes/dashboard.routes.js";
 
 const app = express();
 const port = 3001;
@@ -37,5 +38,5 @@ app.use("/api", categoryRouter);
 app.use("/api", documentRouter);
 app.use("/api", notesRouter);
 app.use("/api", timeLineRouter);
-
+app.use("/api", dashboardRouter);
 app.listen(port, () => console.log(`Example app listening on port ${port}!`));

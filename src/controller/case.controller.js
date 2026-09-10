@@ -98,7 +98,9 @@ const handleAddCase = async (req, res) => {
 };
 const getCases = async (req, res) => {
   try {
-    let officeId;
+    let filter = {
+      isArchived: false,
+    };
 
     // صاحب المكتب
     if (req.user.role === "office_owner") {
@@ -112,12 +114,12 @@ const getCases = async (req, res) => {
         });
       }
 
-      officeId = office._id;
+      filter.officeId = office._id;
     }
 
     // المحامي
     if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
+      const lawyer = await UserModel.findById(req.user.id).select("officeId");
 
       if (!lawyer || !lawyer.officeId) {
         return res.status(404).json({
@@ -125,20 +127,14 @@ const getCases = async (req, res) => {
         });
       }
 
-      officeId = lawyer.officeId;
+      filter.officeId = lawyer.officeId;
     }
 
-    if (!officeId) {
-      return res.status(403).json({
-        message: "غير مسموح لك بعرض القضايا",
-      });
-    }
+    // admin لا يحتاج officeId
+    // وبالتالي سيجلب كل القضايا
 
     const cases = await caseModel
-      .find({
-        officeId,
-        isArchived: false,
-      })
+      .find(filter)
       .populate("clientId", "name phone")
       .populate("lawyers", "name email")
       .populate("caseTypeId", "name")

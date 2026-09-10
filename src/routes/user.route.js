@@ -12,7 +12,7 @@ import upload from "../middleware/upload.middleware.js";
 const userRoutes = express.Router();
 userRoutes
   .route("/users")
-  .get(getUsers)
+  .get(getUsers, authMiddleware, roleMiddleware("admin", "office_owner"))
   .post(
     authMiddleware,
     roleMiddleware("admin", "office_owner"),
@@ -21,7 +21,7 @@ userRoutes
   );
 userRoutes
   .route("/users/:id")
-  .get(getUserById)
+  .get(getUserById, authMiddleware, roleMiddleware("admin", "office_owner"))
   .delete(authMiddleware, roleMiddleware("admin", "office_owner"), deleteUser)
   .put(
     authMiddleware,

@@ -13,7 +13,11 @@ const caseRouter = express.Router();
 
 caseRouter
   .route("/case")
-  .get(authMiddleware, roleMiddleware("office_owner", "lawyer"), getCases)
+  .get(
+    authMiddleware,
+    roleMiddleware("office_owner", "lawyer", "admin"),
+    getCases,
+  )
   .post(
     authMiddleware,
     roleMiddleware("office_owner", "lawyer"),

@@ -4,13 +4,15 @@ import officeModel from "./../models/office.model.js";
 
 const getTimeLine = async (req, res) => {
   try {
-    let officeId;
+    let officeId = null;
 
     // صاحب المكتب
     if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
+      const office = await officeModel
+        .findOne({
+          Owner_id: req.user.id,
+        })
+        .select("_id");
 
       if (!office) {
         return res.status(404).json({
@@ -23,7 +25,7 @@ const getTimeLine = async (req, res) => {
 
     // المحامي
     if (req.user.role === "lawyer") {
-      const user = await UserModel.findById(req.user.id);
+      const user = await UserModel.findById(req.user.id).select("officeId");
 
       if (!user || !user.officeId) {
         return res.status(404).json({
@@ -34,22 +36,29 @@ const getTimeLine = async (req, res) => {
       officeId = user.officeId;
     }
 
-    if (!officeId) {
-      return res.status(403).json({
-        message: "غير مصرح لك بعرض الـ Timeline",
-      });
-    }
-
+    // الفلاتر
     const { caseId, clientId } = req.query;
 
-    const filter = {
-      officeId,
-    };
+    const filter = {};
 
+    // Admin يشوف كل الـ Timeline
+    // باقي المستخدمين يشوفوا Timeline مكتبهم فقط
+    if (req.user.role !== "admin") {
+      if (!officeId) {
+        return res.status(403).json({
+          message: "غير مصرح لك بعرض الـ Timeline",
+        });
+      }
+
+      filter.officeId = officeId;
+    }
+
+    // فلترة اختيارية بالقضية
     if (caseId) {
       filter.caseId = caseId;
     }
 
+    // فلترة اختيارية بالعميل
     if (clientId) {
       filter.clientId = clientId;
     }

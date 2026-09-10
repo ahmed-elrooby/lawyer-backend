@@ -8,7 +8,7 @@ const timeLineRouter = express.Router();
 timeLineRouter.get(
   "/timeline",
   authMiddleware,
-  roleMiddleware("office_owner", "lawyer"),
+  roleMiddleware("office_owner", "lawyer", "admin"),
   getTimeLine,
 );
 
