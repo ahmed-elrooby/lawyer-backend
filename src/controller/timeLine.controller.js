@@ -1,8 +1,9 @@
 import timeLineModel from "../models/timeLine.model.js";
 import UserModel from "../models/User.model.js";
 import officeModel from "./../models/office.model.js";
+import AppError from "../utils/AppError.js";
 
-const getTimeLine = async (req, res) => {
+const getTimeLine = async (req, res, next) => {
   try {
     let officeId = null;
 
@@ -15,9 +16,7 @@ const getTimeLine = async (req, res) => {
         .select("_id");
 
       if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = office._id;
@@ -28,9 +27,7 @@ const getTimeLine = async (req, res) => {
       const user = await UserModel.findById(req.user.id).select("officeId");
 
       if (!user || !user.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على مكتب المحامي",
-        });
+        throw new AppError("لم يتم العثور على مكتب المحامي", 404);
       }
 
       officeId = user.officeId;
@@ -45,9 +42,7 @@ const getTimeLine = async (req, res) => {
     // باقي المستخدمين يشوفوا Timeline مكتبهم فقط
     if (req.user.role !== "admin") {
       if (!officeId) {
-        return res.status(403).json({
-          message: "غير مصرح لك بعرض الـ Timeline",
-        });
+        throw new AppError("غير مصرح لك بعرض الـ Timeline", 403);
       }
 
       filter.officeId = officeId;
@@ -79,12 +74,7 @@ const getTimeLine = async (req, res) => {
       timeLine,
     });
   } catch (error) {
-    console.error("Get TimeLine Error:", error);
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: error.message,
-    });
+    next(error);
   }
 };
 

@@ -1,15 +1,14 @@
 import cloudinary from "../config/cloudinary.js";
 import officeModel from "../models/office.model.js";
 import UserModel from "../models/User.model.js";
+import AppError from "../utils/AppError.js";
 
-const createUser = async (req, res) => {
+const createUser = async (req, res, next) => {
   const { name, email, password, phone, role } = req.body;
 
   try {
     if (req.user.role === "office_owner" && role !== "lawyer") {
-      return res.status(403).json({
-        message: "صاحب المكتب يستطيع إضافة محامين فقط",
-      });
+      throw new AppError("صاحب المكتب يستطيع إضافة محامين فقط", 403);
     }
 
     let office = null;
@@ -20,9 +19,7 @@ const createUser = async (req, res) => {
       });
 
       if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
     }
 
@@ -66,70 +63,66 @@ const createUser = async (req, res) => {
 
     await user.save();
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "تم إنشاء المستخدم بنجاح",
       user,
     });
-  } catch (e) {
-    console.error("Create User Error:", e);
-
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+  } catch (error) {
+    next(error);
   }
 };
-const getUsers = async (req, res) => {
+
+const getUsers = async (req, res, next) => {
   try {
     const users = await UserModel.find({});
-    res.status(200).json({ users });
-  } catch (e) {
-    res.status(500).send(e);
+    return res.status(200).json({ users });
+  } catch (error) {
+    next(error);
   }
 };
-const getUserById = async (req, res) => {
-  const { id } = req.params;
-  try {
-    const user = await UserModel.findById(id);
-    if (!user) return res.status(404).json({ message: "المستخدم غير موجود" });
-    res.status(200).json({ user });
-  } catch (e) {
-    res.status(500).send(e);
-  }
-};
-const deleteUser = async (req, res) => {
+
+const getUserById = async (req, res, next) => {
   const { id } = req.params;
 
   try {
     const user = await UserModel.findById(id);
 
     if (!user) {
-      return res.status(404).json({
-        message: "المستخدم غير موجود",
-      });
+      throw new AppError("المستخدم غير موجود", 404);
+    }
+
+    return res.status(200).json({ user });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const deleteUser = async (req, res, next) => {
+  const { id } = req.params;
+
+  try {
+    const user = await UserModel.findById(id);
+
+    if (!user) {
+      throw new AppError("المستخدم غير موجود", 404);
     }
 
     if (req.user.role === "office_owner" && user.role !== "lawyer") {
-      return res.status(403).json({
-        message: "صاحب المكتب يستطيع حذف المحامين فقط",
-      });
+      throw new AppError("صاحب المكتب يستطيع حذف المحامين فقط", 403);
     }
 
     await UserModel.findByIdAndDelete(id);
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "تم حذف المستخدم بنجاح",
       user,
     });
-  } catch (e) {
-    console.log(e);
-
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-    });
+  } catch (error) {
+    next(error);
   }
 };
-const updateUser = async (req, res) => {
+
+const updateUser = async (req, res, next) => {
   const { id } = req.params;
   const { name, email, phone } = req.body;
 
@@ -138,17 +131,13 @@ const updateUser = async (req, res) => {
     const user = await UserModel.findById(id);
 
     if (!user) {
-      return res.status(404).json({
-        message: "المستخدم غير موجود",
-      });
+      throw new AppError("المستخدم غير موجود", 404);
     }
 
     // 2️⃣ التحقق من صلاحيات صاحب المكتب
     if (req.user.role === "office_owner") {
       if (user.role !== "lawyer") {
-        return res.status(403).json({
-          message: "صاحب المكتب يستطيع تعديل المحامين فقط",
-        });
+        throw new AppError("صاحب المكتب يستطيع تعديل المحامين فقط", 403);
       }
 
       const office = await officeModel.findOne({
@@ -156,18 +145,14 @@ const updateUser = async (req, res) => {
       });
 
       if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       if (
         !user.officeId ||
         user.officeId.toString() !== office._id.toString()
       ) {
-        return res.status(403).json({
-          message: "ليس لديك صلاحية تعديل هذا المحامي",
-        });
+        throw new AppError("ليس لديك صلاحية تعديل هذا المحامي", 403);
       }
     }
 
@@ -213,17 +198,13 @@ const updateUser = async (req, res) => {
     // 6️⃣ حفظ التعديلات
     await user.save();
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "تم تحديث المستخدم بنجاح",
       user,
     });
-  } catch (e) {
-    console.error("Update User Error:", e);
-
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+  } catch (error) {
+    next(error);
   }
 };
+
 export { createUser, getUsers, getUserById, deleteUser, updateUser };

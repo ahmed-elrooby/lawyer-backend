@@ -3,43 +3,50 @@ import officeModel from "../models/office.model.js";
 import sessionModel from "../models/session.model.js";
 import UserModel from "../models/User.model.js";
 import createTimeLine from "../services/timeline.service.js";
+import AppError from "../utils/AppError.js";
 
-const handleAddSession = async (req, res) => {
+// ==========================================
+// Get Office ID
+// ==========================================
+
+const getOfficeId = async (req) => {
+  // صاحب المكتب
+  if (req.user.role === "office_owner") {
+    const office = await officeModel.findOne({
+      Owner_id: req.user.id,
+    });
+
+    if (!office) {
+      return null;
+    }
+
+    return office._id;
+  }
+
+  // المحامي
+  if (req.user.role === "lawyer") {
+    const lawyer = await UserModel.findById(req.user.id);
+
+    if (!lawyer || !lawyer.officeId) {
+      return null;
+    }
+
+    return lawyer.officeId;
+  }
+
+  return null;
+};
+
+// ==========================================
+// Add Session
+// ==========================================
+
+const handleAddSession = async (req, res, next) => {
   try {
-    let officeId;
-
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
-
-      if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = lawyer.officeId;
-    }
+    const officeId = await getOfficeId(req);
 
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مسموح لك بإضافة جلسة",
-      });
+      throw new AppError("غير مسموح لك بإضافة جلسة", 403);
     }
 
     const {
@@ -56,13 +63,11 @@ const handleAddSession = async (req, res) => {
     // التأكد أن القضية تابعة لنفس المكتب
     const caseData = await caseModel.findOne({
       _id: caseId,
-      officeId: officeId,
+      officeId,
     });
 
     if (!caseData) {
-      return res.status(404).json({
-        message: "لم يتم العثور على القضية",
-      });
+      throw new AppError("لم يتم العثور على القضية", 404);
     }
 
     const newSession = new sessionModel({
@@ -89,198 +94,88 @@ const handleAddSession = async (req, res) => {
       createdBy: req.user.id,
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "تم إضافة الجلسة بنجاح",
       session: newSession,
     });
-  } catch (e) {
-    if (e.code === 11000) {
-      return res.status(409).json({
-        message: "هذه الجلسة موجودة بالفعل لنفس القضية في نفس التاريخ والوقت",
-      });
-    }
-
-    if (e.name === "ValidationError") {
-      return res.status(400).json({
-        message: "بيانات الجلسة غير صحيحة",
-        errors: Object.values(e.errors).map((error) => error.message),
-      });
-    }
-
-    if (e.name === "CastError") {
-      return res.status(400).json({
-        message: "معرف القضية غير صحيح",
-      });
-    }
-
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+  } catch (error) {
+    next(error);
   }
 };
-const getSessions = async (req, res) => {
+
+// ==========================================
+// Get Sessions
+// ==========================================
+
+const getSessions = async (req, res, next) => {
   try {
-    let officeId;
-
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
-
-      if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = lawyer.officeId;
-    }
+    const officeId = await getOfficeId(req);
 
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مسموح لك بعرض الجلسات",
-      });
+      throw new AppError("غير مسموح لك بعرض الجلسات", 403);
     }
 
     const sessions = await sessionModel
       .find({
-        officeId: officeId,
+        officeId,
       })
       .populate("caseId", "caseNumber title")
       .populate("officeId", "name")
-      .sort({ sessionDate: 1 });
+      .sort({
+        sessionDate: 1,
+      });
 
-    res.status(200).json({
+    return res.status(200).json({
       sessions,
     });
-  } catch (e) {
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+  } catch (error) {
+    next(error);
   }
 };
-const deleteSession = async (req, res) => {
+
+// ==========================================
+// Delete Session
+// ==========================================
+
+const deleteSession = async (req, res, next) => {
+  const { id } = req.params;
+
   try {
-    const { id } = req.params;
-
-    let officeId;
-
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
-
-      if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = lawyer.officeId;
-    }
+    const officeId = await getOfficeId(req);
 
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مسموح لك بحذف الجلسات",
-      });
+      throw new AppError("غير مسموح لك بحذف الجلسات", 403);
     }
 
     const session = await sessionModel.findOneAndDelete({
       _id: id,
-      officeId: officeId,
+      officeId,
     });
 
     if (!session) {
-      return res.status(404).json({
-        message: "لم يتم العثور على الجلسة",
-      });
+      throw new AppError("لم يتم العثور على الجلسة", 404);
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "تم حذف الجلسة بنجاح",
     });
-  } catch (e) {
-    if (e.name === "CastError") {
-      return res.status(400).json({
-        message: "معرف الجلسة غير صحيح",
-      });
-    }
-
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+  } catch (error) {
+    next(error);
   }
 };
 
-const updateSession = async (req, res) => {
+// ==========================================
+// Update Session
+// ==========================================
+
+const updateSession = async (req, res, next) => {
   const { id } = req.params;
 
   try {
-    let officeId;
-
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
-
-      if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = lawyer.officeId;
-    }
+    const officeId = await getOfficeId(req);
 
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مسموح لك بتعديل الجلسات",
-      });
+      throw new AppError("غير مسموح لك بتعديل الجلسات", 403);
     }
 
     const {
@@ -296,42 +191,59 @@ const updateSession = async (req, res) => {
 
     const updateData = {};
 
-    if (caseId !== undefined) updateData.caseId = caseId;
-    if (title !== undefined) updateData.title = title;
-    if (sessionDate !== undefined) updateData.sessionDate = sessionDate;
-    if (sessionTime !== undefined) updateData.sessionTime = sessionTime;
-    if (status !== undefined) updateData.status = status;
-    if (notes !== undefined) updateData.notes = notes;
-    if (decision !== undefined) updateData.decision = decision;
+    if (caseId !== undefined) {
+      updateData.caseId = caseId;
+    }
+
+    if (title !== undefined) {
+      updateData.title = title;
+    }
+
+    if (sessionDate !== undefined) {
+      updateData.sessionDate = sessionDate;
+    }
+
+    if (sessionTime !== undefined) {
+      updateData.sessionTime = sessionTime;
+    }
+
+    if (status !== undefined) {
+      updateData.status = status;
+    }
+
+    if (notes !== undefined) {
+      updateData.notes = notes;
+    }
+
+    if (decision !== undefined) {
+      updateData.decision = decision;
+    }
 
     if (nextSessionDate !== undefined) {
       updateData.nextSessionDate = nextSessionDate;
     }
 
     if (Object.keys(updateData).length === 0) {
-      return res.status(400).json({
-        message: "لم يتم إرسال أي بيانات للتعديل",
-      });
+      throw new AppError("لم يتم إرسال أي بيانات للتعديل", 400);
     }
 
-    // لو بيغير القضية، نتأكد أن القضية الجديدة تابعة لنفس المكتب
+    // لو بيغير القضية
+    // نتأكد أن القضية الجديدة تابعة لنفس المكتب
     if (caseId !== undefined) {
       const caseData = await caseModel.findOne({
         _id: caseId,
-        officeId: officeId,
+        officeId,
       });
 
       if (!caseData) {
-        return res.status(404).json({
-          message: "القضية غير موجودة أو لا تتبع هذا المكتب",
-        });
+        throw new AppError("القضية غير موجودة أو لا تتبع هذا المكتب", 404);
       }
     }
 
     const session = await sessionModel.findOneAndUpdate(
       {
         _id: id,
-        officeId: officeId,
+        officeId,
       },
       updateData,
       {
@@ -341,15 +253,13 @@ const updateSession = async (req, res) => {
     );
 
     if (!session) {
-      return res.status(404).json({
-        message: "لم يتم العثور على الجلسة",
-      });
+      throw new AppError("لم يتم العثور على الجلسة", 404);
     }
 
     // جلب القضية المرتبطة بالجلسة بعد التعديل
     const caseData = await caseModel.findOne({
       _id: session.caseId,
-      officeId: officeId,
+      officeId,
     });
 
     // تسجيل الحدث في Timeline
@@ -359,7 +269,9 @@ const updateSession = async (req, res) => {
       sessionId: session._id,
       type: "session_updated",
       title: "تم تعديل الجلسة",
-      description: `تم تعديل بيانات جلسة القضية رقم ${caseData?.caseNumber || ""}`,
+      description: `تم تعديل بيانات جلسة القضية رقم ${
+        caseData?.caseNumber || ""
+      }`,
       createdBy: req.user.id,
     });
 
@@ -367,106 +279,48 @@ const updateSession = async (req, res) => {
       message: "تم تحديث الجلسة بنجاح",
       session,
     });
-  } catch (e) {
-    // Duplicate session
-    if (e.code === 11000) {
-      return res.status(409).json({
-        message: "هذه الجلسة موجودة بالفعل لنفس القضية في نفس التاريخ والوقت",
-      });
-    }
-
-    // Validation error
-    if (e.name === "ValidationError") {
-      return res.status(400).json({
-        message: "بيانات الجلسة غير صحيحة",
-        errors: Object.values(e.errors).map((error) => error.message),
-      });
-    }
-
-    // Invalid ObjectId
-    if (e.name === "CastError") {
-      return res.status(400).json({
-        message: "معرف الجلسة أو القضية غير صحيح",
-      });
-    }
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+  } catch (error) {
+    next(error);
   }
 };
 
-const getSessionById = async (req, res) => {
+// ==========================================
+// Get Session By ID
+// ==========================================
+
+const getSessionById = async (req, res, next) => {
   const { id } = req.params;
 
   try {
-    let officeId;
-
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
-
-      if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = lawyer.officeId;
-    }
+    const officeId = await getOfficeId(req);
 
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مسموح لك بعرض الجلسة",
-      });
+      throw new AppError("غير مسموح لك بعرض الجلسة", 403);
     }
 
     const session = await sessionModel
       .findOne({
         _id: id,
-        officeId: officeId,
+        officeId,
       })
       .populate("caseId", "caseNumber title court status");
 
     if (!session) {
-      return res.status(404).json({
-        message: "لم يتم العثور على الجلسة",
-      });
+      throw new AppError("لم يتم العثور على الجلسة", 404);
     }
 
     return res.status(200).json({
       message: "تم العثور على الجلسة بنجاح",
       session,
     });
-  } catch (e) {
-    if (e.name === "CastError") {
-      return res.status(400).json({
-        message: "معرف الجلسة غير صحيح",
-      });
-    }
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+  } catch (error) {
+    next(error);
   }
 };
+
+// ==========================================
+// Export
+// ==========================================
 
 export {
   handleAddSession,

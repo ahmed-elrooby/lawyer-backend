@@ -2,8 +2,9 @@ import caseModel from "../models/case.model.js";
 import officeModel from "../models/office.model.js";
 import UserModel from "../models/User.model.js";
 import createTimeLine from "../services/timeline.service.js";
+import AppError from "../utils/AppError.js";
 
-const handleAddCase = async (req, res) => {
+const handleAddCase = async (req, res, next) => {
   try {
     let officeId;
 
@@ -29,9 +30,7 @@ const handleAddCase = async (req, res) => {
       });
 
       if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = office._id;
@@ -42,9 +41,7 @@ const handleAddCase = async (req, res) => {
       const lawyer = await UserModel.findById(req.user.id);
 
       if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = lawyer.officeId;
@@ -52,9 +49,7 @@ const handleAddCase = async (req, res) => {
 
     // لو Role غير مسموح
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مسموح لك بإنشاء قضية",
-      });
+      throw new AppError("غير مسموح لك بإنشاء قضية", 403);
     }
 
     // إنشاء القضية
@@ -90,13 +85,10 @@ const handleAddCase = async (req, res) => {
       newCase,
     });
   } catch (e) {
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+    next(e);
   }
 };
-const getCases = async (req, res) => {
+const getCases = async (req, res, next) => {
   try {
     let filter = {
       isArchived: false,
@@ -109,9 +101,7 @@ const getCases = async (req, res) => {
       });
 
       if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       filter.officeId = office._id;
@@ -122,9 +112,7 @@ const getCases = async (req, res) => {
       const lawyer = await UserModel.findById(req.user.id).select("officeId");
 
       if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       filter.officeId = lawyer.officeId;
@@ -145,13 +133,10 @@ const getCases = async (req, res) => {
       cases,
     });
   } catch (e) {
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+    next(e);
   }
 };
-const deleteCase = async (req, res) => {
+const deleteCase = async (req, res, next) => {
   try {
     let officeId;
 
@@ -162,9 +147,7 @@ const deleteCase = async (req, res) => {
       });
 
       if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = office._id;
@@ -175,9 +158,7 @@ const deleteCase = async (req, res) => {
       const lawyer = await UserModel.findById(req.user.id);
 
       if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = lawyer.officeId;
@@ -185,9 +166,7 @@ const deleteCase = async (req, res) => {
 
     // التأكد من الصلاحية
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مسموح لك بحذف القضية",
-      });
+      throw new AppError("غير مسموح لك بحذف القضية", 403);
     }
 
     const { id } = req.params;
@@ -199,22 +178,17 @@ const deleteCase = async (req, res) => {
     });
 
     if (!deletedCase) {
-      return res.status(404).json({
-        message: "لم يتم العثور على القضية",
-      });
+      throw new AppError("لم يتم العثور على القضيه", 404);
     }
 
     res.status(200).json({
       message: "تم حذف القضية بنجاح",
     });
   } catch (e) {
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+    next(e);
   }
 };
-const getCaseById = async (req, res) => {
+const getCaseById = async (req, res, next) => {
   try {
     let officeId;
 
@@ -225,9 +199,7 @@ const getCaseById = async (req, res) => {
       });
 
       if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = office._id;
@@ -238,9 +210,7 @@ const getCaseById = async (req, res) => {
       const lawyer = await UserModel.findById(req.user.id);
 
       if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = lawyer.officeId;
@@ -248,9 +218,7 @@ const getCaseById = async (req, res) => {
 
     // التأكد من الصلاحية
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مسموح لك بعرض القضية",
-      });
+      throw new AppError("غير مسموح لك بعرض القضية", 403);
     }
 
     const { id } = req.params;
@@ -267,22 +235,17 @@ const getCaseById = async (req, res) => {
       .populate("officeId", "name");
 
     if (!caseData) {
-      return res.status(404).json({
-        message: "لم يتم العثور على القضية",
-      });
+      throw new AppError("لم يتم العثور على القضية", 404);
     }
 
     res.status(200).json({
       caseData,
     });
   } catch (e) {
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+    next(e);
   }
 };
-const updateCase = async (req, res) => {
+const updateCase = async (req, res, next) => {
   try {
     let officeId;
 
@@ -293,9 +256,7 @@ const updateCase = async (req, res) => {
       });
 
       if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = office._id;
@@ -306,9 +267,7 @@ const updateCase = async (req, res) => {
       const lawyer = await UserModel.findById(req.user.id);
 
       if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = lawyer.officeId;
@@ -316,9 +275,7 @@ const updateCase = async (req, res) => {
 
     // التأكد من الصلاحية
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مسموح لك بتعديل القضية",
-      });
+      throw new AppError("غير مسموح لك بتعديل القضية", 403);
     }
 
     const { id } = req.params;
@@ -364,9 +321,7 @@ const updateCase = async (req, res) => {
     );
 
     if (!updatedCase) {
-      return res.status(404).json({
-        message: "لم يتم العثور على القضية",
-      });
+      throw new AppError("لم يتم العثور على القضيه", 404);
     }
 
     // إضافة Timeline Event
@@ -385,25 +340,7 @@ const updateCase = async (req, res) => {
       updatedCase,
     });
   } catch (e) {
-    console.error("Update Case Error:", e);
-
-    if (e.name === "CastError") {
-      return res.status(400).json({
-        message: "يوجد ID غير صالح",
-      });
-    }
-
-    if (e.name === "ValidationError") {
-      return res.status(400).json({
-        message: "بيانات القضية غير صحيحة",
-        error: e.message,
-      });
-    }
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+    next(e);
   }
 };
 export { handleAddCase, getCases, deleteCase, getCaseById, updateCase };

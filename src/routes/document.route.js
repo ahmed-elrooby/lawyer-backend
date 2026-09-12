@@ -8,6 +8,10 @@ import {
   updateDocument,
 } from "../controller/document.controller.js";
 import documentUpload from "../middleware/documentUpload.middleware.js";
+import {
+  createAttachmentSchema,
+  updateAttachmentSchema,
+} from "../validator/attachment.validation.js";
 
 const documentRouter = express.Router();
 documentRouter
@@ -17,6 +21,7 @@ documentRouter
     authMiddleware,
     roleMiddleware("office_owner", "lawyer"),
     documentUpload.single("file"),
+    validate(createAttachmentSchema),
     handleAddAttachment,
   )
   .get(authMiddleware, roleMiddleware("office_owner", "lawyer"), getDocumnts);
@@ -32,6 +37,7 @@ documentRouter
     authMiddleware,
     roleMiddleware("office_owner", "lawyer"),
     documentUpload.single("file"),
+    validate(updateAttachmentSchema),
     updateDocument,
   );
 export default documentRouter;

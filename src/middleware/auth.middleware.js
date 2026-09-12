@@ -1,25 +1,38 @@
 import jwt from "jsonwebtoken";
+import AppError from "../utils/AppError.js";
 
 const authMiddleware = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader)
-      return res.status(401).json({ message: "يجب تسجيل الدخول" });
+
+    if (!authHeader) {
+      throw new AppError("يجب تسجيل الدخول", 401);
+    }
+
     const [type, token] = authHeader.split(" ");
+
     console.log("type", type);
     console.log("token", token);
-    if (type !== "Bearer" || !token)
-      return res.status(401).json({ message: "يجب تسجيل الدخول" });
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    console.log(decoded);
-    req.user = decoded;
-    next();
-  } catch (e) {
-    console.log("JWT Error:", e.message);
 
-    return res.status(401).json({
-      message: "Token غير صالح أو منتهي الصلاحية",
-    });
+    if (type !== "Bearer" || !token) {
+      throw new AppError("يجب تسجيل الدخول", 401);
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    console.log(decoded);
+
+    req.user = decoded;
+
+    next();
+  } catch (error) {
+    console.log("JWT Error:", error.message);
+
+    if (error instanceof AppError) {
+      return next(error);
+    }
+
+    return next(new AppError("Token غير صالح أو منتهي الصلاحية", 401));
   }
 };
 

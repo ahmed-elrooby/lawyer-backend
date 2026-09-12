@@ -1,6 +1,7 @@
 import ClientModel from "../models/clients.model.js";
 import officeModel from "../models/office.model.js";
 import UserModel from "../models/User.model.js";
+import AppError from "../utils/AppError.js";
 
 const createClient = async (req, res) => {
   const { name, phone, email, address, city, country, nationalId, notes } =
@@ -24,9 +25,7 @@ const createClient = async (req, res) => {
     console.log("USER:", req.user);
     console.log("OFFICE:", office);
     if (!office) {
-      return res.status(404).json({
-        message: "لم يتم العثور على المكتب",
-      });
+      throw new AppError("لم يتم العثور على المكتب", 404);
     }
 
     // 2️⃣ إنشاء العميل
@@ -69,7 +68,7 @@ const createClient = async (req, res) => {
   }
 };
 
-const getAllClients = async (req, res) => {
+const getAllClients = async (req, res, next) => {
   try {
     let officeId;
 
@@ -80,9 +79,7 @@ const getAllClients = async (req, res) => {
       });
 
       if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = office._id;
@@ -93,9 +90,7 @@ const getAllClients = async (req, res) => {
       const lawyer = await UserModel.findById(req.user.id);
 
       if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = lawyer.officeId;
@@ -110,15 +105,10 @@ const getAllClients = async (req, res) => {
       clients,
     });
   } catch (e) {
-    console.error("Get All Clients Error:", e);
-
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+    next(e);
   }
 };
-const deleteClient = async (req, res) => {
+const deleteClient = async (req, res, next) => {
   const { id } = req.params;
 
   try {
@@ -130,9 +120,7 @@ const deleteClient = async (req, res) => {
       });
 
       if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = office._id;
@@ -143,9 +131,7 @@ const deleteClient = async (req, res) => {
       const lawyer = await UserModel.findById(req.user.id);
 
       if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = lawyer.officeId;
@@ -156,12 +142,11 @@ const deleteClient = async (req, res) => {
       message: "تم حذف العميل بنجاح",
     });
   } catch (e) {
-    console.error("Delete Client Error:", e);
-    res.status(500).json({ message: "حدث خطأ في السيرفر", error: e.message });
+    next(e);
   }
 };
 
-const getClientById = async (req, res) => {
+const getClientById = async (req, res, next) => {
   const { id } = req.params;
 
   try {
@@ -174,9 +159,7 @@ const getClientById = async (req, res) => {
       });
 
       if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = office._id;
@@ -187,9 +170,7 @@ const getClientById = async (req, res) => {
       const lawyer = await UserModel.findById(req.user.id);
 
       if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = lawyer.officeId;
@@ -203,25 +184,18 @@ const getClientById = async (req, res) => {
       .populate("createdBy", "name");
 
     if (!client) {
-      return res.status(404).json({
-        message: "العميل غير موجود",
-      });
+      throw new AppError("العميل غير موجود", 404);
     }
 
     res.status(200).json({
       client,
     });
   } catch (e) {
-    console.error("Get Client By Id Error:", e);
-
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+    next(e);
   }
 };
 
-const updateClient = async (req, res) => {
+const updateClient = async (req, res, next) => {
   const { id } = req.params;
 
   const { name, phone, email, address, city, country, nationalId, notes } =
@@ -237,9 +211,7 @@ const updateClient = async (req, res) => {
       });
 
       if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = office._id;
@@ -250,9 +222,7 @@ const updateClient = async (req, res) => {
       const lawyer = await UserModel.findById(req.user.id);
 
       if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = lawyer.officeId;
@@ -282,9 +252,7 @@ const updateClient = async (req, res) => {
       .populate("createdBy", "name");
 
     if (!client) {
-      return res.status(404).json({
-        message: "العميل غير موجود",
-      });
+      throw new AppError("العميل غير موجود", 404);
     }
 
     res.status(200).json({

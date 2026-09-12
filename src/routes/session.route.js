@@ -10,6 +10,11 @@ import {
   handleAddSession,
   updateSession,
 } from "../controller/session.controller.js";
+import validate from "../middleware/validate.js";
+import {
+  createSessionSchema,
+  updateSessionSchema,
+} from "../validator/session.validation.js";
 
 const sessionRouter = express.Router();
 
@@ -18,6 +23,7 @@ sessionRouter
   .post(
     authMiddleware,
     roleMiddleware("office_owner", "lawyer"),
+    validate(createSessionSchema),
     handleAddSession,
   )
   .get(authMiddleware, roleMiddleware("office_owner", "lawyer"), getSessions);
@@ -25,7 +31,12 @@ sessionRouter
 sessionRouter
   .route("/session/:id")
   .get(authMiddleware, roleMiddleware("office_owner", "lawyer"), getSessionById)
-  .put(authMiddleware, roleMiddleware("office_owner", "lawyer"), updateSession)
+  .put(
+    authMiddleware,
+    roleMiddleware("office_owner", "lawyer"),
+    validate(updateSessionSchema),
+    updateSession,
+  )
   .delete(
     authMiddleware,
     roleMiddleware("office_owner", "lawyer"),

@@ -3,23 +3,27 @@ import jwt from "jsonwebtoken";
 import UserModel from "../models/User.model.js";
 import crypto from "crypto";
 import sendEmail from "../utils/sendEmail.js";
+import AppError from "../utils/AppError.js";
 // get user email find if exist or not
-const login = async (req, res) => {
+const login = async (req, res, next) => {
   const { email, password } = req.body;
   try {
     if (!email || !password) {
-      return res.status(400).json({ message: "الايميل وكلمة المرور مطلوبة" });
+      throw new AppError("الإيميل وكلمة المرور مطلوبة", 400);
     }
     const user = await UserModel.findOne({ email }).select("+password");
     if (!user) {
-      return res.status(400).json({ message: "المستخدم غير موجود" });
+      throw new AppError("المستخدم غير موجود", 400);
     }
+
     if (!user.isActive) {
-      return res.status(400).json({ message: "المستخدم غير مفعل" });
+      throw new AppError("المستخدم غير مفعل", 400);
     }
+
     const isMatch = await bcrypt.compare(password, user.password);
+
     if (!isMatch) {
-      return res.status(400).json({ message: "كلمة المرور غير صحيحة" });
+      throw new AppError("كلمة المرور غير صحيحة", 400);
     }
     user.lastLogin = new Date();
     await user.save();
@@ -33,61 +37,45 @@ const login = async (req, res) => {
     user.password = undefined;
     res.status(200).json({ message: "تم تسجيل الدخول بنجاح", token, user });
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "حدث خطاء في السيرفر", error });
+    next(error);
   }
 };
-const getProfile = async (req, res) => {
+const getProfile = async (req, res, next) => {
   try {
     const user = await UserModel.findById(req.user.id);
 
     if (!user) {
-      return res.status(404).json({
-        message: "المستخدم غير موجود",
-      });
+      throw new AppError("المستخدم غير موجود", 404);
     }
-
     res.status(200).json({
       message: "تم جلب بيانات المستخدم بنجاح",
       user,
     });
   } catch (error) {
-    console.log(error);
-
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-    });
+    next(error);
   }
 };
-const logout = async (req, res) => {
+const logout = async (req, res, next) => {
   try {
     res.status(200).json({
       message: "تم تسجيل الخروج بنجاح",
     });
   } catch (error) {
-    console.log(error);
-
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-    });
+    next(error);
   }
 };
-const forgotPassword = async (req, res) => {
+const forgotPassword = async (req, res, next) => {
   try {
     const { email } = req.body;
 
     if (!email) {
-      return res.status(400).json({
-        message: "الإيميل مطلوب",
-      });
+      throw new AppError("الإيميل مطلوب", 400);
     }
 
     const user = await UserModel.findOne({ email });
 
     if (!user) {
-      return res.status(404).json({
-        message: "لا يوجد مستخدم بهذا الإيميل",
-      });
+      throw new AppError("لا يوجد مستخدم بهذا الإيميل", 404);
     }
 
     // إنشاء Token عشوائي
@@ -149,34 +137,24 @@ const forgotPassword = async (req, res) => {
       message: "تم إرسال رابط إعادة تعيين كلمة المرور إلى الإيميل",
     });
   } catch (error) {
-    console.log(error);
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-    });
+    next(error);
   }
 };
-const resetPassword = async (req, res) => {
+const resetPassword = async (req, res, next) => {
   try {
     const { token } = req.params;
     const { password } = req.body;
 
     if (!token) {
-      return res.status(400).json({
-        message: "التوكن مطلوب",
-      });
+      throw new AppError("التوكن مطلوب", 400);
     }
 
     if (!password) {
-      return res.status(400).json({
-        message: "كلمة المرور الجديدة مطلوبة",
-      });
+      throw new AppError("كلمة المرور الجديدة مطلوبة", 400);
     }
 
     if (password.length < 6) {
-      return res.status(400).json({
-        message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل",
-      });
+      throw new AppError("كلمة المرور يجب أن تكون 6 أحرف على الأقل", 400);
     }
 
     const user = await UserModel.findOne({
@@ -185,9 +163,7 @@ const resetPassword = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(400).json({
-        message: "الرابط غير صالح أو منتهي الصلاحية",
-      });
+      throw new AppError("الرابط غير صالح أو منتهي الصلاحية", 400);
     }
 
     // تغيير كلمة المرور
@@ -203,11 +179,7 @@ const resetPassword = async (req, res) => {
       message: "تم تغيير كلمة المرور بنجاح",
     });
   } catch (error) {
-    console.log(error);
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-    });
+    next(error);
   }
 };
 export { login, getProfile, logout, forgotPassword, resetPassword };

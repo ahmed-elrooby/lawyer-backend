@@ -4,51 +4,81 @@ import notesModel from "../models/notes.model.js";
 import officeModel from "../models/office.model.js";
 import sessionModel from "../models/session.model.js";
 import UserModel from "../models/User.model.js";
+
 import createTimeLine from "../services/timeline.service.js";
+import AppError from "../utils/AppError.js";
 
-const addNote = async (req, res) => {
+// ==========================================
+// Get Office ID
+// ==========================================
+
+const getOfficeId = async (req) => {
+  // ==========================================
+  // Office Owner
+  // ==========================================
+
+  if (req.user.role === "office_owner") {
+    const office = await officeModel.findOne({
+      Owner_id: req.user.id,
+    });
+
+    if (!office) {
+      return null;
+    }
+
+    return office._id;
+  }
+
+  // ==========================================
+  // Lawyer
+  // ==========================================
+
+  if (req.user.role === "lawyer") {
+    const user = await UserModel.findById(req.user.id);
+
+    if (!user || !user.officeId) {
+      return null;
+    }
+
+    return user.officeId;
+  }
+
+  return null;
+};
+
+// ==========================================
+// Add Note
+// ==========================================
+
+const addNote = async (req, res, next) => {
   try {
-    let officeId;
+    // ==========================================
+    // Get Office
+    // ==========================================
 
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = office._id;
-    }
-
-    if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
-
-      if (!lawyer || !lawyer.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على مكتب المحامي",
-        });
-      }
-
-      officeId = lawyer.officeId;
-    }
+    const officeId = await getOfficeId(req);
 
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مصرح لك بإضافة ملاحظة",
-      });
+      throw new AppError("غير مصرح لك بإضافة ملاحظة", 403);
     }
+
+    // ==========================================
+    // Get Body
+    // ==========================================
 
     const { caseId, clientId, sessionId, content } = req.body;
 
+    // ==========================================
+    // Validate Content
+    // ==========================================
+
     if (!content || !content.trim()) {
-      return res.status(400).json({
-        message: "محتوى الملاحظة مطلوب",
-      });
+      throw new AppError("محتوى الملاحظة مطلوب", 400);
     }
+
+    // ==========================================
+    // Check Case
+    // ==========================================
 
     let caseData = null;
 
@@ -59,11 +89,13 @@ const addNote = async (req, res) => {
       });
 
       if (!caseData) {
-        return res.status(404).json({
-          message: "القضية غير موجودة داخل المكتب",
-        });
+        throw new AppError("القضية غير موجودة داخل المكتب", 404);
       }
     }
+
+    // ==========================================
+    // Check Client
+    // ==========================================
 
     let clientData = null;
 
@@ -74,11 +106,13 @@ const addNote = async (req, res) => {
       });
 
       if (!clientData) {
-        return res.status(404).json({
-          message: "العميل غير موجود داخل المكتب",
-        });
+        throw new AppError("العميل غير موجود داخل المكتب", 404);
       }
     }
+
+    // ==========================================
+    // Check Session
+    // ==========================================
 
     let sessionData = null;
 
@@ -89,27 +123,33 @@ const addNote = async (req, res) => {
       });
 
       if (!sessionData) {
-        return res.status(404).json({
-          message: "الجلسة غير موجودة داخل المكتب",
-        });
+        throw new AppError("الجلسة غير موجودة داخل المكتب", 404);
       }
     }
+
+    // ==========================================
+    // Check Case + Client Relationship
+    // ==========================================
 
     if (caseData && clientData) {
       if (caseData.clientId.toString() !== clientData._id.toString()) {
-        return res.status(400).json({
-          message: "العميل لا يتبع القضية المحددة",
-        });
+        throw new AppError("العميل لا يتبع القضية المحددة", 400);
       }
     }
 
+    // ==========================================
+    // Check Session + Case Relationship
+    // ==========================================
+
     if (sessionData && caseData) {
       if (sessionData.caseId.toString() !== caseData._id.toString()) {
-        return res.status(400).json({
-          message: "الجلسة لا تتبع القضية المحددة",
-        });
+        throw new AppError("الجلسة لا تتبع القضية المحددة", 400);
       }
     }
+
+    // ==========================================
+    // Create Note
+    // ==========================================
 
     const note = await notesModel.create({
       officeId,
@@ -120,7 +160,10 @@ const addNote = async (req, res) => {
       createdBy: req.user.id,
     });
 
-    // إضافة Timeline Event
+    // ==========================================
+    // Timeline
+    // ==========================================
+
     await createTimeLine({
       officeId,
       caseId: note.caseId,
@@ -135,71 +178,39 @@ const addNote = async (req, res) => {
       createdBy: req.user.id,
     });
 
+    // ==========================================
+    // Response
+    // ==========================================
+
     return res.status(201).json({
       message: "تم إضافة الملاحظة بنجاح",
       note,
     });
   } catch (error) {
-    console.error("Add Note Error:", error);
-
-    if (error.name === "CastError") {
-      return res.status(400).json({
-        message: "يوجد ID غير صالح",
-      });
-    }
-
-    if (error.name === "ValidationError") {
-      return res.status(400).json({
-        message: "بيانات الملاحظة غير صحيحة",
-        error: error.message,
-      });
-    }
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: error.message,
-    });
+    next(error);
   }
 };
-const getNotes = async (req, res) => {
+
+// ==========================================
+// Get Notes
+// ==========================================
+
+const getNotes = async (req, res, next) => {
   try {
-    let officeId;
+    // ==========================================
+    // Get Office
+    // ==========================================
 
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const user = await UserModel.findById(req.user.id);
-
-      if (!user || !user.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على مكتب المحامي",
-        });
-      }
-
-      officeId = user.officeId;
-    }
+    const officeId = await getOfficeId(req);
 
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مصرح لك بعرض الملاحظات",
-      });
+      throw new AppError("غير مصرح لك بعرض الملاحظات", 403);
     }
 
-    // الفلاتر الاختيارية
+    // ==========================================
+    // Filters
+    // ==========================================
+
     const { caseId, clientId, sessionId } = req.query;
 
     const filter = {
@@ -218,13 +229,23 @@ const getNotes = async (req, res) => {
       filter.sessionId = sessionId;
     }
 
+    // ==========================================
+    // Get Notes
+    // ==========================================
+
     const notes = await notesModel
       .find(filter)
       .populate("caseId", "caseNumber title")
       .populate("clientId", "name phone")
       .populate("sessionId", "title sessionDate sessionTime")
       .populate("createdBy", "name email")
-      .sort({ createdAt: -1 });
+      .sort({
+        createdAt: -1,
+      });
+
+    // ==========================================
+    // Response
+    // ==========================================
 
     return res.status(200).json({
       message: "تم استرجاع الملاحظات بنجاح",
@@ -232,53 +253,31 @@ const getNotes = async (req, res) => {
       notes,
     });
   } catch (error) {
-    console.error("Get Notes Error:", error);
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: error.message,
-    });
+    next(error);
   }
 };
-const getNotesById = async (req, res) => {
+
+// ==========================================
+// Get Note By ID
+// ==========================================
+
+const getNotesById = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    let officeId;
+    // ==========================================
+    // Get Office
+    // ==========================================
 
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const user = await UserModel.findById(req.user.id);
-
-      if (!user || !user.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على مكتب المحامي",
-        });
-      }
-
-      officeId = user.officeId;
-    }
+    const officeId = await getOfficeId(req);
 
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مصرح لك بعرض الملاحظات",
-      });
+      throw new AppError("غير مصرح لك بعرض الملاحظات", 403);
     }
+
+    // ==========================================
+    // Get Note
+    // ==========================================
 
     const note = await notesModel
       .findOne({
@@ -291,61 +290,43 @@ const getNotesById = async (req, res) => {
       .populate("createdBy", "name email");
 
     if (!note) {
-      return res.status(404).json({
-        message: "لم يتم العثور على الملاحظة",
-      });
+      throw new AppError("لم يتم العثور على الملاحظة", 404);
     }
+
+    // ==========================================
+    // Response
+    // ==========================================
 
     return res.status(200).json({
       message: "تم استرجاع الملاحظة بنجاح",
       note,
     });
   } catch (error) {
-    console.error("Get Note Error:", error);
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: error.message,
-    });
+    next(error);
   }
 };
-const updateNote = async (req, res) => {
+
+// ==========================================
+// Update Note
+// ==========================================
+
+const updateNote = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    let officeId;
+    // ==========================================
+    // Get Office
+    // ==========================================
 
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = office._id;
-    }
-
-    if (req.user.role === "lawyer") {
-      const user = await UserModel.findById(req.user.id);
-
-      if (!user || !user.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على مكتب المحامي",
-        });
-      }
-
-      officeId = user.officeId;
-    }
+    const officeId = await getOfficeId(req);
 
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مصرح لك بتعديل الملاحظات",
-      });
+      throw new AppError("غير مصرح لك بتعديل الملاحظات", 403);
     }
+
+    // ==========================================
+    // Find Note
+    // ==========================================
 
     const note = await notesModel.findOne({
       _id: id,
@@ -353,24 +334,31 @@ const updateNote = async (req, res) => {
     });
 
     if (!note) {
-      return res.status(404).json({
-        message: "لم يتم العثور على الملاحظة",
-      });
+      throw new AppError("لم يتم العثور على الملاحظة", 404);
     }
+
+    // ==========================================
+    // Validate Content
+    // ==========================================
 
     const { content } = req.body;
 
     if (!content || !content.trim()) {
-      return res.status(400).json({
-        message: "محتوى الملاحظة مطلوب",
-      });
+      throw new AppError("محتوى الملاحظة مطلوب", 400);
     }
+
+    // ==========================================
+    // Update
+    // ==========================================
 
     note.content = content.trim();
 
     await note.save();
 
-    // إضافة Timeline Event
+    // ==========================================
+    // Timeline
+    // ==========================================
+
     await createTimeLine({
       officeId,
       caseId: note.caseId,
@@ -383,71 +371,40 @@ const updateNote = async (req, res) => {
       createdBy: req.user.id,
     });
 
+    // ==========================================
+    // Response
+    // ==========================================
+
     return res.status(200).json({
       message: "تم تحديث الملاحظة بنجاح",
       note,
     });
   } catch (error) {
-    console.error("Update Note Error:", error);
-
-    if (error.name === "CastError") {
-      return res.status(400).json({
-        message: "يوجد ID غير صالح",
-      });
-    }
-
-    if (error.name === "ValidationError") {
-      return res.status(400).json({
-        message: "بيانات الملاحظة غير صحيحة",
-        error: error.message,
-      });
-    }
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: error.message,
-    });
+    next(error);
   }
 };
-const deleteNote = async (req, res) => {
+
+// ==========================================
+// Delete Note
+// ==========================================
+
+const deleteNote = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    let officeId;
+    // ==========================================
+    // Get Office
+    // ==========================================
 
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const user = await UserModel.findById(req.user.id);
-
-      if (!user || !user.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = user.officeId;
-    }
+    const officeId = await getOfficeId(req);
 
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مصرح لك بحذف الملاحظات",
-      });
+      throw new AppError("غير مصرح لك بحذف الملاحظات", 403);
     }
+
+    // ==========================================
+    // Delete Note
+    // ==========================================
 
     const note = await notesModel.findOneAndDelete({
       _id: id,
@@ -455,12 +412,13 @@ const deleteNote = async (req, res) => {
     });
 
     if (!note) {
-      return res.status(404).json({
-        message: "لم يتم العثور على الملاحظة",
-      });
+      throw new AppError("لم يتم العثور على الملاحظة", 404);
     }
 
-    // إضافة Timeline Event
+    // ==========================================
+    // Timeline
+    // ==========================================
+
     await createTimeLine({
       officeId,
       caseId: note.caseId,
@@ -473,23 +431,21 @@ const deleteNote = async (req, res) => {
       createdBy: req.user.id,
     });
 
+    // ==========================================
+    // Response
+    // ==========================================
+
     return res.status(200).json({
       message: "تم حذف الملاحظة بنجاح",
       note,
     });
   } catch (error) {
-    console.error("Delete Note Error:", error);
-
-    if (error.name === "CastError") {
-      return res.status(400).json({
-        message: "يوجد ID غير صالح",
-      });
-    }
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: error.message,
-    });
+    next(error);
   }
 };
+
+// ==========================================
+// Export
+// ==========================================
+
 export { addNote, getNotes, getNotesById, updateNote, deleteNote };

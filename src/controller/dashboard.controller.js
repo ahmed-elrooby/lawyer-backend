@@ -3,8 +3,9 @@ import ClientModel from "../models/clients.model.js";
 import officeModel from "../models/office.model.js";
 import sessionModel from "../models/session.model.js";
 import UserModel from "../models/User.model.js";
+import AppError from "../utils/AppError.js";
 
-const getDashboardStatistics = async (req, res) => {
+const getDashboardStatistics = async (req, res, next) => {
   try {
     let officeId;
 
@@ -20,9 +21,7 @@ const getDashboardStatistics = async (req, res) => {
         .select("_id");
 
       if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
+        throw new AppError("لم يتم العثور على المكتب", 404);
       }
 
       officeId = office._id;
@@ -30,9 +29,7 @@ const getDashboardStatistics = async (req, res) => {
       const user = await UserModel.findById(req.user.id).select("officeId");
 
       if (!user || !user.officeId) {
-        return res.status(404).json({
-          message: "المستخدم غير مرتبط بمكتب",
-        });
+        throw new AppError("المستخدم غير مرتبط بمكتب", 404);
       }
 
       officeId = user.officeId;
@@ -161,11 +158,7 @@ const getDashboardStatistics = async (req, res) => {
       },
     });
   } catch (error) {
-    console.log(error);
-
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-    });
+    next(error);
   }
 };
 

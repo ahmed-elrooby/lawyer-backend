@@ -9,7 +9,13 @@ import ClientModel from "../models/clients.model.js";
 import sessionModel from "../models/session.model.js";
 import AttachmentModel from "../models/document.model.js";
 import AttachmentCategoryModel from "../models/attachmentCategories.model.js";
+
 import createTimeLine from "../services/timeline.service.js";
+import AppError from "../utils/AppError.js";
+
+// ==========================================
+// Upload To Cloudinary
+// ==========================================
 
 const uploadToCloudinary = (buffer, originalName) => {
   return new Promise((resolve, reject) => {
@@ -24,12 +30,9 @@ const uploadToCloudinary = (buffer, originalName) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder: "lawyer-system/attachments",
-
         resource_type: "raw",
-
         public_id: `${Date.now()}-${fileName}${extension}`,
       },
-
       (error, result) => {
         if (error) {
           reject(error);
@@ -42,13 +45,26 @@ const uploadToCloudinary = (buffer, originalName) => {
     Readable.from(buffer).pipe(uploadStream);
   });
 };
+
+// ==========================================
+// Delete From Cloudinary
+// ==========================================
+
 const deleteFromCloudinary = async (publicId) => {
   return await cloudinary.uploader.destroy(publicId, {
     resource_type: "raw",
   });
 };
 
+// ==========================================
+// Get Office ID
+// ==========================================
+
 const getOfficeId = async (req) => {
+  // ==========================================
+  // Office Owner
+  // ==========================================
+
   if (req.user.role === "office_owner") {
     const office = await officeModel.findOne({
       Owner_id: req.user.id,
@@ -78,17 +94,15 @@ const getOfficeId = async (req) => {
   return null;
 };
 
-const handleAddAttachment = async (req, res) => {
+// ==========================================
+// Add Attachment
+// ==========================================
+
+const handleAddAttachment = async (req, res, next) => {
   try {
     if (!req.file) {
-      return res.status(400).json({
-        message: "الملف مطلوب",
-      });
+      throw new AppError("الملف مطلوب", 400);
     }
-
-    // ==========================================
-    // Get Body Data
-    // ==========================================
 
     const { caseId, clientId, sessionId, categoryId, name, description } =
       req.body;
@@ -98,9 +112,7 @@ const handleAddAttachment = async (req, res) => {
     // ==========================================
 
     if (!categoryId) {
-      return res.status(400).json({
-        message: "تصنيف الملف مطلوب",
-      });
+      throw new AppError("تصنيف الملف مطلوب", 400);
     }
 
     // ==========================================
@@ -108,9 +120,7 @@ const handleAddAttachment = async (req, res) => {
     // ==========================================
 
     if (!name || !name.trim()) {
-      return res.status(400).json({
-        message: "اسم الملف مطلوب",
-      });
+      throw new AppError("اسم الملف مطلوب", 400);
     }
 
     // ==========================================
@@ -120,9 +130,7 @@ const handleAddAttachment = async (req, res) => {
     const officeId = await getOfficeId(req);
 
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مصرح لك برفع الملفات",
-      });
+      throw new AppError("غير مصرح لك برفع الملفات", 403);
     }
 
     // ==========================================
@@ -135,9 +143,7 @@ const handleAddAttachment = async (req, res) => {
     });
 
     if (!category) {
-      return res.status(404).json({
-        message: "تصنيف الملف غير موجود أو غير مفعل",
-      });
+      throw new AppError("تصنيف الملف غير موجود أو غير مفعل", 404);
     }
 
     // ==========================================
@@ -153,9 +159,7 @@ const handleAddAttachment = async (req, res) => {
       });
 
       if (!caseData) {
-        return res.status(404).json({
-          message: "القضية غير موجودة داخل المكتب",
-        });
+        throw new AppError("القضية غير موجودة داخل المكتب", 404);
       }
     }
 
@@ -172,9 +176,7 @@ const handleAddAttachment = async (req, res) => {
       });
 
       if (!clientData) {
-        return res.status(404).json({
-          message: "العميل غير موجود داخل المكتب",
-        });
+        throw new AppError("العميل غير موجود داخل المكتب", 404);
       }
     }
 
@@ -191,9 +193,7 @@ const handleAddAttachment = async (req, res) => {
       });
 
       if (!sessionData) {
-        return res.status(404).json({
-          message: "الجلسة غير موجودة داخل المكتب",
-        });
+        throw new AppError("الجلسة غير موجودة داخل المكتب", 404);
       }
     }
 
@@ -203,9 +203,7 @@ const handleAddAttachment = async (req, res) => {
 
     if (caseData && clientData) {
       if (caseData.clientId.toString() !== clientData._id.toString()) {
-        return res.status(400).json({
-          message: "العميل لا يتبع القضية المحددة",
-        });
+        throw new AppError("العميل لا يتبع القضية المحددة", 400);
       }
     }
 
@@ -215,9 +213,7 @@ const handleAddAttachment = async (req, res) => {
 
     if (sessionData && caseData) {
       if (sessionData.caseId.toString() !== caseData._id.toString()) {
-        return res.status(400).json({
-          message: "الجلسة لا تتبع القضية المحددة",
-        });
+        throw new AppError("الجلسة لا تتبع القضية المحددة", 400);
       }
     }
 
@@ -239,7 +235,7 @@ const handleAddAttachment = async (req, res) => {
     );
 
     // ==========================================
-    // Save Attachment In MongoDB
+    // Save Attachment
     // ==========================================
 
     const attachment = new AttachmentModel({
@@ -273,6 +269,11 @@ const handleAddAttachment = async (req, res) => {
     });
 
     await attachment.save();
+
+    // ==========================================
+    // Timeline
+    // ==========================================
+
     await createTimeLine({
       officeId,
       caseId: attachment.caseId,
@@ -286,87 +287,30 @@ const handleAddAttachment = async (req, res) => {
       }`,
       createdBy: req.user.id,
     });
+
     // ==========================================
     // Response
     // ==========================================
 
     return res.status(201).json({
       message: "تم رفع الملف بنجاح",
-
       attachment,
     });
-  } catch (e) {
-    console.error("Attachment Upload Error:", e);
-
-    // ==========================================
-    // Invalid MongoDB ID
-    // ==========================================
-
-    if (e.name === "CastError") {
-      return res.status(400).json({
-        message: "يوجد ID غير صالح",
-      });
-    }
-
-    // ==========================================
-    // Validation Error
-    // ==========================================
-
-    if (e.name === "ValidationError") {
-      return res.status(400).json({
-        message: "بيانات الملف غير صحيحة",
-        error: e.message,
-      });
-    }
-
-    // ==========================================
-    // General Error
-    // ==========================================
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-
-      error: e.message,
-    });
+  } catch (error) {
+    next(error);
   }
 };
 
-const getDocumnts = async (req, res) => {
+// ==========================================
+// Get Documents
+// ==========================================
+
+const getDocumnts = async (req, res, next) => {
   try {
-    let officeId;
-
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const user = await UserModel.findById(req.user.id);
-
-      if (!user || !user.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على مكتب المحامي",
-        });
-      }
-
-      officeId = user.officeId;
-    }
+    const officeId = await getOfficeId(req);
 
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مصرح لك بعرض الملفات",
-      });
+      throw new AppError("غير مصرح لك بعرض الملفات", 403);
     }
 
     const attachments = await AttachmentModel.find({
@@ -385,119 +329,73 @@ const getDocumnts = async (req, res) => {
       attachments,
     });
   } catch (error) {
-    console.error(error);
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: error.message,
-    });
+    next(error);
   }
 };
-const getDocumentById = async (req, res) => {
+
+// ==========================================
+// Get Document By ID
+// ==========================================
+
+const getDocumentById = async (req, res, next) => {
   try {
     const { id } = req.params;
-    let officeId;
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-      if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-      officeId = office._id;
-    }
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const user = await UserModel.findById(req.user.id);
-      if (!user || !user.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على مكتب المحامي",
-        });
-      }
-      officeId = user.officeId;
-    }
+
+    const officeId = await getOfficeId(req);
+
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مصرح لك بعرض الملفات",
-      });
+      throw new AppError("غير مصرح لك بعرض الملفات", 403);
     }
+
     const attachment = await AttachmentModel.findOne({
       _id: id,
       officeId,
     });
+
     if (!attachment) {
-      return res.status(404).json({
-        message: "لم يتم العثور على الملف",
-      });
+      throw new AppError("لم يتم العثور على الملف", 404);
     }
+
     return res.status(200).json({
       message: "تم جلب الملف بنجاح",
       attachment,
     });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      message: "حدث خطاء في السيرفر",
-      error: error.message,
-    });
+    next(error);
   }
 };
-const deleteDocument = async (req, res) => {
+
+// ==========================================
+// Delete Document
+// ==========================================
+
+const deleteDocument = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    let officeId;
-
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const user = await UserModel.findById(req.user.id);
-
-      if (!user || !user.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على مكتب المحامي",
-        });
-      }
-
-      officeId = user.officeId;
-    }
+    const officeId = await getOfficeId(req);
 
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مصرح لك بحذف الملفات",
-      });
+      throw new AppError("غير مصرح لك بحذف الملفات", 403);
     }
 
-    // البحث عن الملف داخل نفس المكتب
+    // ==========================================
+    // Find Attachment
+    // ==========================================
+
     const attachment = await AttachmentModel.findOne({
       _id: id,
       officeId,
     });
 
     if (!attachment) {
-      return res.status(404).json({
-        message: "لم يتم العثور على الملف",
-      });
+      throw new AppError("لم يتم العثور على الملف", 404);
     }
 
-    // لو الملف مرتبط بقضية، نجيب بيانات القضية
+    // ==========================================
+    // Get Case
+    // ==========================================
+
     let caseData = null;
 
     if (attachment.caseId) {
@@ -507,13 +405,27 @@ const deleteDocument = async (req, res) => {
       });
     }
 
-    // حذف الملف من MongoDB
+    // ==========================================
+    // Delete From MongoDB
+    // ==========================================
+
     await AttachmentModel.findOneAndDelete({
       _id: id,
       officeId,
     });
 
-    // إضافة Timeline Event
+    // ==========================================
+    // Delete From Cloudinary
+    // ==========================================
+
+    if (attachment.publicId) {
+      await deleteFromCloudinary(attachment.publicId);
+    }
+
+    // ==========================================
+    // Timeline
+    // ==========================================
+
     await createTimeLine({
       officeId,
       caseId: attachment.caseId,
@@ -533,70 +445,35 @@ const deleteDocument = async (req, res) => {
       attachment,
     });
   } catch (error) {
-    console.error("Delete Attachment Error:", error);
-
-    if (error.name === "CastError") {
-      return res.status(400).json({
-        message: "يوجد ID غير صالح",
-      });
-    }
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: error.message,
-    });
+    next(error);
   }
 };
-const updateDocument = async (req, res) => {
+
+// ==========================================
+// Update Document
+// ==========================================
+
+const updateDocument = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    let officeId;
-
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        return res.status(404).json({
-          message: "لم يتم العثور على المكتب",
-        });
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const user = await UserModel.findById(req.user.id);
-
-      if (!user || !user.officeId) {
-        return res.status(404).json({
-          message: "لم يتم العثور على مكتب المحامي",
-        });
-      }
-
-      officeId = user.officeId;
-    }
+    const officeId = await getOfficeId(req);
 
     if (!officeId) {
-      return res.status(403).json({
-        message: "غير مصرح لك بتعديل الملفات",
-      });
+      throw new AppError("غير مصرح لك بتعديل الملفات", 403);
     }
 
-    // البحث عن الملف والتأكد أنه تابع للمكتب
+    // ==========================================
+    // Find Attachment
+    // ==========================================
+
     const attachment = await AttachmentModel.findOne({
       _id: id,
       officeId,
     });
 
     if (!attachment) {
-      return res.status(404).json({
-        message: "لم يتم العثور على الملف",
-      });
+      throw new AppError("لم يتم العثور على الملف", 404);
     }
 
     const { name, categoryId, description, caseId, clientId, sessionId } =
@@ -604,27 +481,29 @@ const updateDocument = async (req, res) => {
 
     const updateData = {};
 
-    // =========================
-    // البيانات العادية
-    // =========================
+    // ==========================================
+    // Name
+    // ==========================================
 
     if (name !== undefined) {
       if (!name.trim()) {
-        return res.status(400).json({
-          message: "اسم الملف مطلوب",
-        });
+        throw new AppError("اسم الملف مطلوب", 400);
       }
 
       updateData.name = name.trim();
     }
 
+    // ==========================================
+    // Description
+    // ==========================================
+
     if (description !== undefined) {
       updateData.description = description?.trim() || "";
     }
 
-    // =========================
-    // التحقق من Category
-    // =========================
+    // ==========================================
+    // Category
+    // ==========================================
 
     if (categoryId !== undefined) {
       const category = await AttachmentCategoryModel.findOne({
@@ -633,17 +512,15 @@ const updateDocument = async (req, res) => {
       });
 
       if (!category) {
-        return res.status(404).json({
-          message: "تصنيف الملف غير موجود أو غير مفعل",
-        });
+        throw new AppError("تصنيف الملف غير موجود أو غير مفعل", 404);
       }
 
       updateData.categoryId = categoryId;
     }
 
-    // =========================
-    // التحقق من Case
-    // =========================
+    // ==========================================
+    // Case
+    // ==========================================
 
     let caseData = null;
 
@@ -655,9 +532,7 @@ const updateDocument = async (req, res) => {
         });
 
         if (!caseData) {
-          return res.status(404).json({
-            message: "القضية غير موجودة داخل المكتب",
-          });
+          throw new AppError("القضية غير موجودة داخل المكتب", 404);
         }
 
         updateData.caseId = caseId;
@@ -666,9 +541,9 @@ const updateDocument = async (req, res) => {
       }
     }
 
-    // =========================
-    // التحقق من Client
-    // =========================
+    // ==========================================
+    // Client
+    // ==========================================
 
     let clientData = null;
 
@@ -680,9 +555,7 @@ const updateDocument = async (req, res) => {
         });
 
         if (!clientData) {
-          return res.status(404).json({
-            message: "العميل غير موجود داخل المكتب",
-          });
+          throw new AppError("العميل غير موجود داخل المكتب", 404);
         }
 
         updateData.clientId = clientId;
@@ -691,9 +564,9 @@ const updateDocument = async (req, res) => {
       }
     }
 
-    // =========================
-    // التحقق من Session
-    // =========================
+    // ==========================================
+    // Session
+    // ==========================================
 
     let sessionData = null;
 
@@ -705,9 +578,7 @@ const updateDocument = async (req, res) => {
         });
 
         if (!sessionData) {
-          return res.status(404).json({
-            message: "الجلسة غير موجودة داخل المكتب",
-          });
+          throw new AppError("الجلسة غير موجودة داخل المكتب", 404);
         }
 
         updateData.sessionId = sessionId;
@@ -716,9 +587,9 @@ const updateDocument = async (req, res) => {
       }
     }
 
-    // =========================
-    // التأكد أن Case و Client مرتبطين
-    // =========================
+    // ==========================================
+    // Case + Client Relationship
+    // ==========================================
 
     const finalCaseId =
       caseId !== undefined ? caseId : attachment.caseId?.toString();
@@ -746,15 +617,13 @@ const updateDocument = async (req, res) => {
         clientData &&
         caseData.clientId.toString() !== clientData._id.toString()
       ) {
-        return res.status(400).json({
-          message: "العميل لا يتبع القضية المحددة",
-        });
+        throw new AppError("العميل لا يتبع القضية المحددة", 400);
       }
     }
 
-    // =========================
-    // التأكد أن Session تتبع Case
-    // =========================
+    // ==========================================
+    // Session + Case Relationship
+    // ==========================================
 
     const finalSessionId =
       sessionId !== undefined ? sessionId : attachment.sessionId?.toString();
@@ -779,21 +648,19 @@ const updateDocument = async (req, res) => {
         caseData &&
         sessionData.caseId.toString() !== caseData._id.toString()
       ) {
-        return res.status(400).json({
-          message: "الجلسة لا تتبع القضية المحددة",
-        });
+        throw new AppError("الجلسة لا تتبع القضية المحددة", 400);
       }
     }
 
-    // =========================
-    // حفظ ID الملف القديم
-    // =========================
+    // ==========================================
+    // Old Cloudinary Public ID
+    // ==========================================
 
     const oldPublicId = attachment.publicId;
 
-    // =========================
-    // لو فيه ملف جديد
-    // =========================
+    // ==========================================
+    // Upload New File
+    // ==========================================
 
     if (req.file) {
       const cloudinaryResult = await uploadToCloudinary(
@@ -808,16 +675,21 @@ const updateDocument = async (req, res) => {
         : "";
 
       updateData.originalName = req.file.originalname;
+
       updateData.url = cloudinaryResult.secure_url;
+
       updateData.publicId = cloudinaryResult.public_id;
+
       updateData.mimeType = req.file.mimetype;
+
       updateData.size = req.file.size;
+
       updateData.extension = extension;
     }
 
-    // =========================
-    // تحديث MongoDB
-    // =========================
+    // ==========================================
+    // Update MongoDB
+    // ==========================================
 
     const updatedAttachment = await AttachmentModel.findOneAndUpdate(
       {
@@ -831,9 +703,13 @@ const updateDocument = async (req, res) => {
       },
     );
 
-    // =========================
-    // حذف الملف القديم بعد نجاح التحديث
-    // =========================
+    if (!updatedAttachment) {
+      throw new AppError("لم يتم العثور على الملف", 404);
+    }
+
+    // ==========================================
+    // Delete Old File From Cloudinary
+    // ==========================================
 
     if (req.file && oldPublicId) {
       await deleteFromCloudinary(oldPublicId);
@@ -844,27 +720,14 @@ const updateDocument = async (req, res) => {
       attachment: updatedAttachment,
     });
   } catch (error) {
-    console.error("Attachment Update Error:", error);
-
-    if (error.name === "CastError") {
-      return res.status(400).json({
-        message: "يوجد ID غير صالح",
-      });
-    }
-
-    if (error.name === "ValidationError") {
-      return res.status(400).json({
-        message: "بيانات الملف غير صحيحة",
-        error: error.message,
-      });
-    }
-
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: error.message,
-    });
+    next(error);
   }
 };
+
+// ==========================================
+// Export
+// ==========================================
+
 export {
   handleAddAttachment,
   getDocumnts,

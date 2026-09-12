@@ -8,6 +8,11 @@ import {
   getCategoryById,
   updateCategory,
 } from "../controller/attachementCategory.controller.js";
+import {
+  createAttachmentCategorySchema,
+  updateAttachmentCategorySchema,
+} from "../validator/attachmentCategory.validation.js";
+import validate from "../middleware/validate.js";
 const categoryRouter = express.Router();
 
 categoryRouter
@@ -17,7 +22,12 @@ categoryRouter
     roleMiddleware("admin", "office_owner", "lawyer"),
     getCategories,
   )
-  .post(authMiddleware, roleMiddleware("admin"), addCategory);
+  .post(
+    authMiddleware,
+    roleMiddleware("admin"),
+    validate(createAttachmentCategorySchema),
+    addCategory,
+  );
 categoryRouter
   .route("/category/:id")
   .get(
@@ -26,5 +36,10 @@ categoryRouter
     getCategoryById,
   )
   .delete(authMiddleware, roleMiddleware("admin"), deleteCategory)
-  .put(authMiddleware, roleMiddleware("admin"), updateCategory);
+  .put(
+    authMiddleware,
+    roleMiddleware("admin"),
+    validate(updateAttachmentCategorySchema),
+    updateCategory,
+  );
 export default categoryRouter;

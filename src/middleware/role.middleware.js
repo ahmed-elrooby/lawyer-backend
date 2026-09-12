@@ -1,3 +1,5 @@
+import AppError from "../utils/AppError.js";
+
 const roleMiddleware = (...allowedRoles) => {
   return (req, res, next) => {
     console.log("USER:", req.user);
@@ -5,17 +7,11 @@ const roleMiddleware = (...allowedRoles) => {
     console.log("ALLOWED:", allowedRoles);
 
     if (!req.user) {
-      return res.status(401).json({
-        message: "يجب تسجيل الدخول",
-      });
+      return next(new AppError("يجب تسجيل الدخول", 401));
     }
 
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({
-        message: "ليس لديك صلاحية لتنفيذ هذا الإجراء",
-        userRole: req.user.role,
-        allowedRoles,
-      });
+      return next(new AppError("ليس لديك صلاحية لتنفيذ هذا الإجراء", 403));
     }
 
     next();

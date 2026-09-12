@@ -1,7 +1,13 @@
-import officeModel from "./../models/office.model.js";
+import officeModel from "../models/office.model.js";
+import AppError from "../utils/AppError.js";
 
-const CreateOffice = async (req, res) => {
+// ==========================================
+// Create Office
+// ==========================================
+
+const CreateOffice = async (req, res, next) => {
   const { name, phone, email, address, city, country } = req.body;
+
   try {
     const office = new officeModel({
       name,
@@ -12,45 +18,86 @@ const CreateOffice = async (req, res) => {
       country,
       Owner_id: req.user.id,
     });
+
     await office.save();
-    res.status(201).json({ message: "تم إنشاء المكتب بنجاح", office });
-  } catch (e) {
-    res.status(500).send(e);
+
+    return res.status(201).json({
+      message: "تم إنشاء المكتب بنجاح",
+      office,
+    });
+  } catch (error) {
+    next(error);
   }
 };
-const getOffice = async (req, res) => {
+
+// ==========================================
+// Get All Offices
+// ==========================================
+
+const getOffice = async (req, res, next) => {
   try {
     const office = await officeModel.find({}).populate("Owner_id", "name id");
-    res.status(200).json({ office });
-  } catch (e) {
-    res.status(500).send(e);
+
+    return res.status(200).json({
+      office,
+    });
+  } catch (error) {
+    next(error);
   }
 };
-const getOfficeById = async (req, res) => {
+
+// ==========================================
+// Get Office By ID
+// ==========================================
+
+const getOfficeById = async (req, res, next) => {
   const { id } = req.params;
+
   try {
     const office = await officeModel
       .findById(id)
       .populate("Owner_id", "name id");
-    if (!office) return res.status(404).json({ message: "المكتب غير موجود" });
-    res.status(200).json({ office });
-  } catch (e) {
-    res.status(500).send(e);
+
+    if (!office) {
+      throw new AppError("المكتب غير موجود", 404);
+    }
+
+    return res.status(200).json({
+      office,
+    });
+  } catch (error) {
+    next(error);
   }
 };
 
-const deleteOffice = async (req, res) => {
+// ==========================================
+// Delete Office
+// ==========================================
+
+const deleteOffice = async (req, res, next) => {
   const { id } = req.params;
+
   try {
     const office = await officeModel.findByIdAndDelete(id);
-    if (!office) return res.status(404).json({ message: "المكتب غير موجود" });
-    res.status(200).json({ message: "تم حذف المكتب بنجاح", office });
-  } catch (e) {
-    res.status(500).send(e);
+
+    if (!office) {
+      throw new AppError("المكتب غير موجود", 404);
+    }
+
+    return res.status(200).json({
+      message: "تم حذف المكتب بنجاح",
+      office,
+    });
+  } catch (error) {
+    next(error);
   }
 };
 
-const updateOffice = async (req, res) => {
+// ==========================================
+// Update Office
+// ==========================================
+
+const updateOffice = async (req, res, next) => {
   const { id } = req.params;
 
   const { name, phone, email, address, city, country } = req.body;
@@ -59,42 +106,49 @@ const updateOffice = async (req, res) => {
     const office = await officeModel.findById(id);
 
     if (!office) {
-      return res.status(404).json({
-        message: "المكتب غير موجود",
-      });
+      throw new AppError("المكتب غير موجود", 404);
     }
 
-    // صاحب المكتب يقدر يعدل مكتبه فقط
+    // ==========================================
+    // Office Owner Permission
+    // ==========================================
+
     if (
       req.user.role === "office_owner" &&
       office.Owner_id.toString() !== req.user.id
     ) {
-      return res.status(403).json({
-        message: "ليس لديك صلاحية تعديل هذا المكتب",
-      });
+      throw new AppError("ليس لديك صلاحية تعديل هذا المكتب", 403);
     }
 
+    // ==========================================
+    // Update Fields
+    // ==========================================
+
     office.name = name ?? office.name;
+
     office.phone = phone ?? office.phone;
+
     office.email = email ?? office.email;
+
     office.address = address ?? office.address;
+
     office.city = city ?? office.city;
+
     office.country = country ?? office.country;
 
     await office.save();
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "تم تحديث المكتب بنجاح",
       office,
     });
-  } catch (e) {
-    console.error("Update Office Error:", e);
-
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+  } catch (error) {
+    next(error);
   }
 };
+
+// ==========================================
+// Export
+// ==========================================
 
 export { CreateOffice, getOffice, getOfficeById, deleteOffice, updateOffice };

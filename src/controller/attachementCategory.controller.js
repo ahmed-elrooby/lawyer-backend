@@ -1,13 +1,12 @@
 import AttachmentCategoryModel from "../models/attachmentCategories.model.js";
+import AppError from "./../utils/AppError.js";
 
-const addCategory = async (req, res) => {
+const addCategory = async (req, res, next) => {
   try {
     const { name, description } = req.body;
 
     if (!name) {
-      return res.status(400).json({
-        message: "اسم القسم مطلوب",
-      });
+      throw new AppError("اسم القسم مطلوب", 400);
     }
 
     const existingCategory = await AttachmentCategoryModel.findOne({
@@ -15,9 +14,7 @@ const addCategory = async (req, res) => {
     });
 
     if (existingCategory) {
-      return res.status(409).json({
-        message: "هذا القسم موجود بالفعل",
-      });
+      throw new AppError("هذا القسم موجود بالفعل", 409);
     }
 
     const category = new AttachmentCategoryModel({
@@ -32,10 +29,7 @@ const addCategory = async (req, res) => {
       category,
     });
   } catch (e) {
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+    next(e);
   }
 };
 const getCategories = async (req, res) => {
@@ -54,22 +48,18 @@ const getCategories = async (req, res) => {
     });
   }
 };
-const deleteCategory = async (req, res) => {
+const deleteCategory = async (req, res, next) => {
   const { id } = req.params;
 
   try {
     const category = await AttachmentCategoryModel.findById(id);
 
     if (!category) {
-      return res.status(404).json({
-        message: "القسم غير موجود",
-      });
+      throw new AppError("القسم غير موجود", 404);
     }
 
     if (!category.isActive) {
-      return res.status(400).json({
-        message: "القسم محذوف بالفعل",
-      });
+      throw new AppError("القسم محذوف بالفعل", 400);
     }
 
     category.isActive = false;
@@ -81,14 +71,11 @@ const deleteCategory = async (req, res) => {
       category,
     });
   } catch (e) {
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+    next(e);
   }
 };
 
-const updateCategory = async (req, res) => {
+const updateCategory = async (req, res, next) => {
   const { id } = req.params;
   const { name, description } = req.body;
 
@@ -96,22 +83,16 @@ const updateCategory = async (req, res) => {
     const category = await AttachmentCategoryModel.findById(id);
 
     if (!category) {
-      return res.status(404).json({
-        message: "القسم غير موجود",
-      });
+      throw new AppError("القسم غير موجود", 404);
     }
 
     if (!category.isActive) {
-      return res.status(400).json({
-        message: "القسم محذوف بالفعل",
-      });
+      throw new AppError("القسم محذوف بالفعل", 400);
     }
 
     if (name !== undefined) {
       if (!name.trim()) {
-        return res.status(400).json({
-          message: "اسم القسم مطلوب",
-        });
+        throw new AppError("اسم القسم مطلوب", 400);
       }
 
       const existingCategory = await AttachmentCategoryModel.findOne({
@@ -120,9 +101,7 @@ const updateCategory = async (req, res) => {
       });
 
       if (existingCategory) {
-        return res.status(409).json({
-          message: "هذا القسم موجود بالفعل",
-        });
+        throw new AppError("هذا القسم موجود بالفعل", 409);
       }
 
       category.name = name.trim();
@@ -139,13 +118,10 @@ const updateCategory = async (req, res) => {
       category,
     });
   } catch (e) {
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+    next(e);
   }
 };
-const getCategoryById = async (req, res) => {
+const getCategoryById = async (req, res, next) => {
   const { id } = req.params;
 
   try {
@@ -155,9 +131,7 @@ const getCategoryById = async (req, res) => {
     });
 
     if (!category) {
-      return res.status(404).json({
-        message: "القسم غير موجود",
-      });
+      throw new AppError("القسم غير موجود", 404);
     }
 
     return res.status(200).json({
