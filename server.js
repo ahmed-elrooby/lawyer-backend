@@ -17,6 +17,8 @@ import timeLineRouter from "./src/routes/timeLine.route.js";
 import "./src/jobs/sessionReminder.job.js";
 import dashboardRouter from "./src/routes/dashboard.routes.js";
 import errorMiddleware from "./src/middleware/errorMiddleware.js";
+import notificationRouter from "./src/routes/notification.routes.js";
+import adminNotificationRouter from "./src/routes/adminNotification.routes.js";
 
 const app = express();
 const port = 3001;
@@ -40,6 +42,8 @@ app.use("/api", documentRouter);
 app.use("/api", notesRouter);
 app.use("/api", timeLineRouter);
 app.use("/api", dashboardRouter);
+app.use("/api", notificationRouter);
+app.use("/api", adminNotificationRouter);
 app.use(errorMiddleware);
 
 app.listen(port, () => console.log(`Example app listening on port ${port}!`));

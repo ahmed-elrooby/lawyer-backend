@@ -1,0 +1,92 @@
+import notificationModel from "../models/notification.model.js";
+import AppError from "../utils/AppError.js";
+
+// جلب إشعارات المستخدم الحالي
+const getNotifications = async (req, res, next) => {
+  try {
+    const notifications = await notificationModel
+      .find({
+        userId: req.user.id,
+      })
+      .populate("caseId", "caseNumber title")
+      .populate("sessionId", "sessionDate sessionTime")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      message: "تم جلب الإشعارات بنجاح",
+      notifications,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// عدد الإشعارات غير المقروءة
+const getUnreadCount = async (req, res, next) => {
+  try {
+    const count = await notificationModel.countDocuments({
+      userId: req.user.id,
+      isRead: false,
+    });
+
+    return res.status(200).json({
+      count,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// تحديد إشعار كمقروء
+const markAsRead = async (req, res, next) => {
+  const { id } = req.params;
+
+  try {
+    const notification = await notificationModel.findOneAndUpdate(
+      {
+        _id: id,
+        userId: req.user.id,
+      },
+      {
+        isRead: true,
+      },
+      {
+        new: true,
+      },
+    );
+
+    if (!notification) {
+      throw new AppError("لم يتم العثور على الإشعار", 404);
+    }
+
+    return res.status(200).json({
+      message: "تم تحديد الإشعار كمقروء",
+      notification,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// تحديد كل الإشعارات كمقروءة
+const markAllAsRead = async (req, res, next) => {
+  try {
+    await notificationModel.updateMany(
+      {
+        userId: req.user.id,
+        isRead: false,
+      },
+      {
+        isRead: true,
+      },
+    );
+
+    return res.status(200).json({
+      message: "تم تحديد جميع الإشعارات كمقروءة",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export { getNotifications, getUnreadCount, markAsRead, markAllAsRead };
