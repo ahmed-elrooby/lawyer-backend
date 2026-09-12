@@ -34,7 +34,7 @@ const getDashboardStatistics = async (req, res, next) => {
 
       officeId = user.officeId;
     } else if (req.user.role === "admin") {
-      // الـ Admin يشوف الإحصائيات العامة
+      // Admin يشوف الإحصائيات العامة
       officeId = null;
     }
 
@@ -42,20 +42,105 @@ const getDashboardStatistics = async (req, res, next) => {
     // Filters
     // =========================
 
-    const clientFilter = officeId ? { officeId } : {};
+    let clientFilter = {};
+    let caseFilter = {};
+    let sessionFilter = {};
+    let lawyerFilter = {};
 
-    const caseFilter = officeId ? { officeId } : {};
+    // =========================
+    // Admin
+    // =========================
 
-    const sessionFilter = officeId ? { officeId } : {};
+    if (req.user.role === "admin") {
+      // إحصائيات عامة على مستوى النظام
 
-    const lawyerFilter = officeId
-      ? {
-          officeId,
-          role: "lawyer",
-        }
-      : {
-          role: "lawyer",
-        };
+      clientFilter = {};
+
+      caseFilter = {};
+
+      sessionFilter = {};
+
+      lawyerFilter = {
+        role: "lawyer",
+      };
+    }
+
+    // =========================
+    // Office Owner
+    // =========================
+
+    if (req.user.role === "office_owner") {
+      // صاحب المكتب يشوف كل بيانات مكتبه
+
+      clientFilter = {
+        officeId,
+      };
+
+      caseFilter = {
+        officeId,
+      };
+
+      sessionFilter = {
+        officeId,
+      };
+
+      lawyerFilter = {
+        officeId,
+        role: "lawyer",
+      };
+    }
+
+    // =========================
+    // Lawyer
+    // =========================
+
+    if (req.user.role === "lawyer") {
+      // المحامي يشوف القضايا المسندة إليه فقط
+
+      caseFilter = {
+        officeId,
+        lawyers: req.user.id,
+      };
+
+      // جلب القضايا المسندة للمحامي
+      const assignedCases = await caseModel
+        .find(caseFilter)
+        .select("_id clientId");
+
+      // IDs القضايا
+      const assignedCaseIds = assignedCases.map((caseItem) => caseItem._id);
+
+      // IDs العملاء المرتبطين بقضايا المحامي
+      const assignedClientIds = [
+        ...new Set(
+          assignedCases
+            .map((caseItem) => caseItem.clientId?.toString())
+            .filter(Boolean),
+        ),
+      ];
+
+      // العملاء المرتبطين بقضايا المحامي فقط
+      clientFilter = {
+        officeId,
+        _id: {
+          $in: assignedClientIds,
+        },
+      };
+
+      // الجلسات الخاصة بقضايا المحامي فقط
+      sessionFilter = {
+        officeId,
+        caseId: {
+          $in: assignedCaseIds,
+        },
+      };
+
+      // المحامي نفسه
+      lawyerFilter = {
+        _id: req.user.id,
+        role: "lawyer",
+      };
+    }
 
     // =========================
     // Statistics
@@ -67,15 +152,25 @@ const getDashboardStatistics = async (req, res, next) => {
       activeCases,
       reservedForJudgmentCases,
       judgedCases,
+
       totalSessions,
       scheduledSessions,
       attendedSessions,
       postponedSessions,
       completedSessions,
       cancelledSessions,
+
       totalLawyers,
     ] = await Promise.all([
+      // =========================
+      // Clients
+      // =========================
+
       ClientModel.countDocuments(clientFilter),
+
+      // =========================
+      // Cases
+      // =========================
 
       caseModel.countDocuments(caseFilter),
 
@@ -93,6 +188,10 @@ const getDashboardStatistics = async (req, res, next) => {
         ...caseFilter,
         status: "judged",
       }),
+
+      // =========================
+      // Sessions
+      // =========================
 
       sessionModel.countDocuments(sessionFilter),
 
@@ -120,6 +219,10 @@ const getDashboardStatistics = async (req, res, next) => {
         ...sessionFilter,
         status: "cancelled",
       }),
+
+      // =========================
+      // Lawyers
+      // =========================
 
       UserModel.countDocuments(lawyerFilter),
     ]);
