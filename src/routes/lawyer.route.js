@@ -17,6 +17,7 @@ lawyerRoutes
     authMiddleware,
     roleMiddleware("admin", "office_owner"),
     upload.single("profileImage"),
+   
     createLawyer,
   )
   .get(authMiddleware, roleMiddleware("admin", "office_owner"), getLawyers);

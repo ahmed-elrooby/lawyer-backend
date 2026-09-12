@@ -20,7 +20,7 @@ caseRouter
   .route("/case")
   .get(
     authMiddleware,
-    roleMiddleware("office_owner", "lawyer", "admin"),
+    roleMiddleware("office_owner", "lawyer"),
     getCases,
   )
   .post(

@@ -12,6 +12,7 @@ import {
   createAttachmentSchema,
   updateAttachmentSchema,
 } from "../validator/attachment.validation.js";
+import validate from "../middleware/validate.js";
 
 const documentRouter = express.Router();
 documentRouter

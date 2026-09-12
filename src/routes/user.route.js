@@ -11,12 +11,11 @@ import {
 import authMiddleware from "../middleware/auth.middleware.js";
 import roleMiddleware from "../middleware/role.middleware.js";
 import upload from "../middleware/upload.middleware.js";
-
+import validate from "../middleware/validate.js";
 import {
   createUserSchema,
   updateUserSchema,
-} from "../validations/user.validation.js";
-import validate from "../middleware/validate.js";
+} from "../validator/user.validation.js";
 
 const userRoutes = express.Router();
 
