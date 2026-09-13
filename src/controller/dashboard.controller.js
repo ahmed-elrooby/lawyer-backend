@@ -1,3 +1,6 @@
+
+import * as XLSX from "xlsx";
+
 import caseModel from "../models/case.model.js";
 import ClientModel from "../models/clients.model.js";
 import officeModel from "../models/office.model.js";
@@ -5,13 +8,11 @@ import sessionModel from "../models/session.model.js";
 import UserModel from "../models/User.model.js";
 import AppError from "../utils/AppError.js";
 
+
 const getDashboardStatistics = async (req, res, next) => {
   try {
     let officeId;
 
-    // =========================
-    // تحديد المكتب
-    // =========================
 
     if (req.user.role === "office_owner") {
       const office = await officeModel
@@ -34,26 +35,16 @@ const getDashboardStatistics = async (req, res, next) => {
 
       officeId = user.officeId;
     } else if (req.user.role === "admin") {
-      // Admin يشوف الإحصائيات العامة
       officeId = null;
     }
 
-    // =========================
-    // Filters
-    // =========================
-
+   
     let clientFilter = {};
     let caseFilter = {};
     let sessionFilter = {};
     let lawyerFilter = {};
 
-    // =========================
-    // Admin
-    // =========================
-
     if (req.user.role === "admin") {
-      // إحصائيات عامة على مستوى النظام
-
       clientFilter = {};
 
       caseFilter = {};
@@ -65,13 +56,8 @@ const getDashboardStatistics = async (req, res, next) => {
       };
     }
 
-    // =========================
-    // Office Owner
-    // =========================
-
+  
     if (req.user.role === "office_owner") {
-      // صاحب المكتب يشوف كل بيانات مكتبه
-
       clientFilter = {
         officeId,
       };
@@ -90,13 +76,8 @@ const getDashboardStatistics = async (req, res, next) => {
       };
     }
 
-    // =========================
-    // Lawyer
-    // =========================
 
     if (req.user.role === "lawyer") {
-      // المحامي يشوف القضايا المسندة إليه فقط
-
       caseFilter = {
         officeId,
         lawyers: req.user.id,
@@ -108,18 +89,18 @@ const getDashboardStatistics = async (req, res, next) => {
         .select("_id clientId");
 
       // IDs القضايا
-      const assignedCaseIds = assignedCases.map((caseItem) => caseItem._id);
+      const assignedCaseIds = assignedCases.map(
+        (caseItem) => caseItem._id
+      );
 
-      // IDs العملاء المرتبطين بقضايا المحامي
       const assignedClientIds = [
         ...new Set(
           assignedCases
             .map((caseItem) => caseItem.clientId?.toString())
-            .filter(Boolean),
+            .filter(Boolean)
         ),
       ];
 
-      // العملاء المرتبطين بقضايا المحامي فقط
       clientFilter = {
         officeId,
         _id: {
@@ -127,7 +108,6 @@ const getDashboardStatistics = async (req, res, next) => {
         },
       };
 
-      // الجلسات الخاصة بقضايا المحامي فقط
       sessionFilter = {
         officeId,
         caseId: {
@@ -135,16 +115,12 @@ const getDashboardStatistics = async (req, res, next) => {
         },
       };
 
-      // المحامي نفسه
       lawyerFilter = {
         _id: req.user.id,
         role: "lawyer",
       };
     }
 
-    // =========================
-    // Statistics
-    // =========================
 
     const [
       totalClients,
@@ -162,15 +138,7 @@ const getDashboardStatistics = async (req, res, next) => {
 
       totalLawyers,
     ] = await Promise.all([
-      // =========================
-      // Clients
-      // =========================
-
       ClientModel.countDocuments(clientFilter),
-
-      // =========================
-      // Cases
-      // =========================
 
       caseModel.countDocuments(caseFilter),
 
@@ -188,10 +156,6 @@ const getDashboardStatistics = async (req, res, next) => {
         ...caseFilter,
         status: "judged",
       }),
-
-      // =========================
-      // Sessions
-      // =========================
 
       sessionModel.countDocuments(sessionFilter),
 
@@ -220,16 +184,10 @@ const getDashboardStatistics = async (req, res, next) => {
         status: "cancelled",
       }),
 
-      // =========================
-      // Lawyers
-      // =========================
-
       UserModel.countDocuments(lawyerFilter),
     ]);
 
-    // =========================
-    // Response
-    // =========================
+
 
     res.status(200).json({
       message: "تم جلب الإحصائيات بنجاح",
@@ -265,4 +223,266 @@ const getDashboardStatistics = async (req, res, next) => {
   }
 };
 
-export default getDashboardStatistics;
+
+
+const exportDashboardStatistics = async (req, res, next) => {
+  try {
+
+
+    if (req.user.role !== "admin") {
+      throw new AppError(
+        "غير مسموح لك بتصدير الإحصائيات",
+        403
+      );
+    }
+
+
+
+    const clientFilter = {};
+
+    const caseFilter = {};
+
+    const sessionFilter = {};
+
+    const lawyerFilter = {
+      role: "lawyer",
+    };
+
+
+    const [
+      totalClients,
+      totalCases,
+      activeCases,
+      reservedForJudgmentCases,
+      judgedCases,
+
+      totalSessions,
+      scheduledSessions,
+      attendedSessions,
+      postponedSessions,
+      completedSessions,
+      cancelledSessions,
+
+      totalLawyers,
+    ] = await Promise.all([
+      ClientModel.countDocuments(clientFilter),
+
+      caseModel.countDocuments(caseFilter),
+
+      caseModel.countDocuments({
+        ...caseFilter,
+        status: "active",
+      }),
+
+      caseModel.countDocuments({
+        ...caseFilter,
+        status: "reserved_for_judgment",
+      }),
+
+      caseModel.countDocuments({
+        ...caseFilter,
+        status: "judged",
+      }),
+
+      sessionModel.countDocuments(sessionFilter),
+
+      sessionModel.countDocuments({
+        ...sessionFilter,
+        status: "scheduled",
+      }),
+
+      sessionModel.countDocuments({
+        ...sessionFilter,
+        status: "attended",
+      }),
+
+      sessionModel.countDocuments({
+        ...sessionFilter,
+        status: "postponed",
+      }),
+
+      sessionModel.countDocuments({
+        ...sessionFilter,
+        status: "completed",
+      }),
+
+      sessionModel.countDocuments({
+        ...sessionFilter,
+        status: "cancelled",
+      }),
+
+      UserModel.countDocuments(lawyerFilter),
+    ]);
+
+
+
+    const calculatePercentage = (value, total) => {
+      if (!total) {
+        return 0;
+      }
+
+      return Math.round((value / total) * 100);
+    };
+
+    const activeCasesPercentage = calculatePercentage(
+      activeCases,
+      totalCases
+    );
+
+    const reservedForJudgmentPercentage = calculatePercentage(
+      reservedForJudgmentCases,
+      totalCases
+    );
+
+    const scheduledSessionsPercentage = calculatePercentage(
+      scheduledSessions,
+      totalSessions
+    );
+
+    const postponedSessionsPercentage = calculatePercentage(
+      postponedSessions,
+      totalSessions
+    );
+
+ 
+
+    const reportData = [
+      ["تقرير إحصائيات النظام"],
+      [],
+
+      ["القضايا"],
+      ["البيان", "العدد", "النسبة"],
+      ["إجمالي القضايا", totalCases, "100%"],
+      [
+        "القضايا النشطة",
+        activeCases,
+        `${activeCasesPercentage}%`,
+      ],
+      [
+        "القضايا المحجوزة للحكم",
+        reservedForJudgmentCases,
+        `${reservedForJudgmentPercentage}%`,
+      ],
+      [
+        "القضايا التي تم الحكم فيها",
+        judgedCases,
+        "",
+      ],
+
+      [],
+
+      ["الجلسات"],
+      ["البيان", "العدد", "النسبة"],
+      ["إجمالي الجلسات", totalSessions, "100%"],
+      [
+        "الجلسات المجدولة",
+        scheduledSessions,
+        `${scheduledSessionsPercentage}%`,
+      ],
+      [
+        "الجلسات التي تم حضورها",
+        attendedSessions,
+        "",
+      ],
+      [
+        "الجلسات المؤجلة",
+        postponedSessions,
+        `${postponedSessionsPercentage}%`,
+      ],
+      [
+        "الجلسات المكتملة",
+        completedSessions,
+        "",
+      ],
+      [
+        "الجلسات الملغاة",
+        cancelledSessions,
+        "",
+      ],
+
+      [],
+
+      ["المستخدمون"],
+      ["البيان", "العدد"],
+      ["إجمالي العملاء", totalClients],
+      ["إجمالي المحامين", totalLawyers],
+
+      [],
+
+      ["مؤشرات الأداء"],
+      ["المؤشر", "النسبة"],
+      [
+        "نسبة القضايا النشطة",
+        `${activeCasesPercentage}%`,
+      ],
+      [
+        "نسبة القضايا المحجوزة للحكم",
+        `${reservedForJudgmentPercentage}%`,
+      ],
+      [
+        "نسبة الجلسات المجدولة",
+        `${scheduledSessionsPercentage}%`,
+      ],
+      [
+        "نسبة الجلسات المؤجلة",
+        `${postponedSessionsPercentage}%`,
+      ],
+    ];
+
+  
+
+    const worksheet = XLSX.utils.aoa_to_sheet(reportData);
+
+
+
+    const workbook = XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      "الإحصائيات"
+    );
+
+
+    worksheet["!cols"] = [
+      {
+        wch: 35,
+      },
+      {
+        wch: 15,
+      },
+      {
+        wch: 15,
+      },
+    ];
+
+
+    const excelBuffer = XLSX.write(workbook, {
+      type: "buffer",
+      bookType: "xlsx",
+    });
+
+ 
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="dashboard-statistics.xlsx"'
+    );
+
+    res.send(excelBuffer);
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+
+export {
+  getDashboardStatistics,
+  exportDashboardStatistics,
+};
