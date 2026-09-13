@@ -1,3 +1,4 @@
+
 import notificationModel from "../models/notification.model.js";
 import AppError from "../utils/AppError.js";
 
@@ -89,4 +90,33 @@ const markAllAsRead = async (req, res, next) => {
   }
 };
 
-export { getNotifications, getUnreadCount, markAsRead, markAllAsRead };
+// حذف إشعار
+const deleteNotification = async (req, res, next) => {
+  const { id } = req.params;
+
+  try {
+    const notification = await notificationModel.findOneAndDelete({
+      _id: id,
+      userId: req.user.id,
+    });
+
+    if (!notification) {
+      throw new AppError("لم يتم العثور على الإشعار", 404);
+    }
+
+    return res.status(200).json({
+      message: "تم حذف الإشعار بنجاح",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export {
+  getNotifications,
+  getUnreadCount,
+  markAsRead,
+  markAllAsRead,
+  deleteNotification,
+};
+

@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 const notificationSchema = new mongoose.Schema(
@@ -5,7 +6,7 @@ const notificationSchema = new mongoose.Schema(
     officeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Office",
-      required: true,
+      default: null,
     },
 
     userId: {
@@ -19,10 +20,14 @@ const notificationSchema = new mongoose.Schema(
       required: true,
       enum: [
         "upcoming_session",
+        "system",
+        "user_created",
+        "user_updated",
+        "user_deleted",
       ],
     },
 
-    // نوع التذكير
+    // نوع التذكير الخاص بالجلسات
     reminderType: {
       type: String,
       enum: ["1_day_before", "1_hour_before"],
@@ -61,7 +66,7 @@ const notificationSchema = new mongoose.Schema(
   {
     timestamps: true,
   },
-  );
+);
 
 notificationSchema.index({
   officeId: 1,
@@ -74,7 +79,7 @@ notificationSchema.index({
   isRead: 1,
 });
 
-// منع تكرار نفس التذكير لنفس المستخدم
+// منع تكرار نفس التذكير لنفس المستخدم ولنفس الجلسة
 notificationSchema.index(
   {
     sessionId: 1,
@@ -96,3 +101,4 @@ const notificationModel = mongoose.model(
 );
 
 export default notificationModel;
+

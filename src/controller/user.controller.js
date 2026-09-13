@@ -1,6 +1,7 @@
 import cloudinary from "../config/cloudinary.js";
 import officeModel from "../models/office.model.js";
 import UserModel from "../models/User.model.js";
+import { notifyAdmins } from "../services/notification.service.js";
 import AppError from "../utils/AppError.js";
 
 const createUser = async (req, res, next) => {
@@ -63,6 +64,18 @@ const createUser = async (req, res, next) => {
 
     await user.save();
 
+    // إرسال إشعار للمسؤولين
+    try {
+      await notifyAdmins({
+        officeId: user.officeId,
+        type: "user_created",
+        title: "تم إنشاء مستخدم جديد",
+        message: `تم إنشاء حساب ${user.name} بنجاح`,
+      });
+    } catch (notificationError) {
+      // فشل الإشعار لا يمنع إنشاء المستخدم
+    }
+
     return res.status(201).json({
       message: "تم إنشاء المستخدم بنجاح",
       user,
@@ -75,7 +88,10 @@ const createUser = async (req, res, next) => {
 const getUsers = async (req, res, next) => {
   try {
     const users = await UserModel.find({});
-    return res.status(200).json({ users });
+
+    return res.status(200).json({
+      users,
+    });
   } catch (error) {
     next(error);
   }
@@ -91,7 +107,9 @@ const getUserById = async (req, res, next) => {
       throw new AppError("المستخدم غير موجود", 404);
     }
 
-    return res.status(200).json({ user });
+    return res.status(200).json({
+      user,
+    });
   } catch (error) {
     next(error);
   }
@@ -111,7 +129,23 @@ const deleteUser = async (req, res, next) => {
       throw new AppError("صاحب المكتب يستطيع حذف المحامين فقط", 403);
     }
 
+    // نحفظ البيانات التي نحتاجها للإشعار قبل الحذف
+    const deletedUserName = user.name;
+    const deletedUserOfficeId = user.officeId;
+
     await UserModel.findByIdAndDelete(id);
+
+    // إرسال إشعار للمسؤولين
+    try {
+      await notifyAdmins({
+        officeId: deletedUserOfficeId,
+        type: "user_deleted",
+        title: "تم حذف مستخدم",
+        message: `تم حذف حساب ${deletedUserName} من النظام`,
+      });
+    } catch (notificationError) {
+      // فشل الإشعار لا يمنع حذف المستخدم
+    }
 
     return res.status(200).json({
       message: "تم حذف المستخدم بنجاح",
@@ -137,7 +171,10 @@ const updateUser = async (req, res, next) => {
     // 2️⃣ التحقق من صلاحيات صاحب المكتب
     if (req.user.role === "office_owner") {
       if (user.role !== "lawyer") {
-        throw new AppError("صاحب المكتب يستطيع تعديل المحامين فقط", 403);
+        throw new AppError(
+          "صاحب المكتب يستطيع تعديل المحامين فقط",
+          403,
+        );
       }
 
       const office = await officeModel.findOne({
@@ -152,11 +189,14 @@ const updateUser = async (req, res, next) => {
         !user.officeId ||
         user.officeId.toString() !== office._id.toString()
       ) {
-        throw new AppError("ليس لديك صلاحية تعديل هذا المحامي", 403);
+        throw new AppError(
+          "ليس لديك صلاحية تعديل هذا المحامي",
+          403,
+        );
       }
     }
 
-    // 3️⃣ تعديل البيانات العادية
+    // 3️⃣ تعديل البيانات
     user.name = name ?? user.name;
     user.email = email ?? user.email;
     user.phone = phone ?? user.phone;
@@ -189,14 +229,26 @@ const updateUser = async (req, res, next) => {
         publicId: result.public_id,
       };
 
-      // 5️⃣ حذف الصورة القديمة
+      // حذف الصورة القديمة
       if (oldPublicId) {
         await cloudinary.uploader.destroy(oldPublicId);
       }
     }
 
-    // 6️⃣ حفظ التعديلات
+    // 5️⃣ حفظ التعديلات
     await user.save();
+
+    // 6️⃣ إرسال إشعار للمسؤولين
+    try {
+      await notifyAdmins({
+        officeId: user.officeId,
+        type: "user_updated",
+        title: "تم تحديث بيانات مستخدم",
+        message: `تم تحديث بيانات حساب ${user.name}`,
+      });
+    } catch (notificationError) {
+      // فشل الإشعار لا يمنع تحديث المستخدم
+    }
 
     return res.status(200).json({
       message: "تم تحديث المستخدم بنجاح",
@@ -207,4 +259,10 @@ const updateUser = async (req, res, next) => {
   }
 };
 
-export { createUser, getUsers, getUserById, deleteUser, updateUser };
+export {
+  createUser,
+  getUsers,
+  getUserById,
+  deleteUser,
+  updateUser,
+};
