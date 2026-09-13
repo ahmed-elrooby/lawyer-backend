@@ -32,16 +32,22 @@ const notifyAdmins = async ({
   title,
   message,
 }) => {
+  console.log("========== notifyAdmins START ==========");
+
   const admins = await UserModel.find({
     role: "admin",
     isActive: true,
   }).select("_id");
 
+  console.log("Admins found:", admins.length);
+  console.log("Admin IDs:", admins.map((admin) => admin._id));
+
   if (!admins.length) {
+    console.log("No active admins found");
     return;
   }
 
-  await notificationModel.insertMany(
+  const notifications = await notificationModel.insertMany(
     admins.map((admin) => ({
       officeId,
       userId: admin._id,
@@ -50,6 +56,9 @@ const notifyAdmins = async ({
       message,
     })),
   );
+
+  console.log("Notifications created:", notifications.length);
+  console.log("========== notifyAdmins END ==========");
 };
 
 export { notifyAdmins };

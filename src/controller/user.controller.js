@@ -65,16 +65,22 @@ const createUser = async (req, res, next) => {
     await user.save();
 
     // إرسال إشعار للمسؤولين
-    try {
-      await notifyAdmins({
-        officeId: user.officeId,
-        type: "user_created",
-        title: "تم إنشاء مستخدم جديد",
-        message: `تم إنشاء حساب ${user.name} بنجاح`,
-      });
-    } catch (notificationError) {
-      // فشل الإشعار لا يمنع إنشاء المستخدم
-    }
+try {
+  await notifyAdmins({
+    officeId: user.officeId,
+    type: "user_created",
+    title: "تم إنشاء مستخدم جديد",
+    message: `تم إنشاء حساب ${user.name} بنجاح`,
+  });
+} catch (notificationError) {
+  console.error("========== NOTIFICATION ERROR ==========");
+  console.error("Message:", notificationError.message);
+  console.error("Name:", notificationError.name);
+  console.error("Code:", notificationError.code);
+  console.error("Stack:", notificationError.stack);
+  console.error("Full Error:", notificationError);
+  console.error("========================================");
+}
 
     return res.status(201).json({
       message: "تم إنشاء المستخدم بنجاح",

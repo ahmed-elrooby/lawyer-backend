@@ -5,6 +5,10 @@ import AppError from "../utils/AppError.js";
 // جلب إشعارات المستخدم الحالي
 const getNotifications = async (req, res, next) => {
   try {
+    console.log("========== GET NOTIFICATIONS ==========");
+    console.log("REQ.USER:", req.user);
+    console.log("USER ID:", req.user.id);
+
     const notifications = await notificationModel
       .find({
         userId: req.user.id,
@@ -13,15 +17,18 @@ const getNotifications = async (req, res, next) => {
       .populate("sessionId", "sessionDate sessionTime")
       .sort({ createdAt: -1 });
 
+    console.log("NOTIFICATIONS FOUND:", notifications.length);
+    console.log("NOTIFICATIONS:", notifications);
+
     return res.status(200).json({
       message: "تم جلب الإشعارات بنجاح",
       notifications,
     });
   } catch (error) {
+    console.error("GET NOTIFICATIONS ERROR:", error);
     next(error);
   }
 };
-
 // عدد الإشعارات غير المقروءة
 const getUnreadCount = async (req, res, next) => {
   try {

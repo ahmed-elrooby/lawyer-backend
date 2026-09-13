@@ -2,11 +2,12 @@ import express from "express";
 import authMiddleware from "../middleware/auth.middleware.js";
 import roleMiddleware from "../middleware/role.middleware.js";
 import {
-  getAdminNotifications,
+  deleteAdminNotification,
   getAdminUnreadCount,
   markAdminNotificationAsRead,
   markAllAdminNotificationsAsRead,
 } from "../controller/adminNotification.controller.js";
+import { getNotifications } from "../controller/notification.controller.js";
 
 const adminNotificationRouter = express.Router();
 
@@ -14,7 +15,7 @@ adminNotificationRouter.get(
   "/admin/notifications",
   authMiddleware,
   roleMiddleware("admin"),
-  getAdminNotifications,
+  getNotifications,
 );
 
 adminNotificationRouter.get(
@@ -36,6 +37,12 @@ adminNotificationRouter.patch(
   authMiddleware,
   roleMiddleware("admin"),
   markAllAdminNotificationsAsRead,
+);
+adminNotificationRouter.delete(
+  "/admin/notifications/:id",
+  authMiddleware,
+  roleMiddleware("admin"),
+  deleteAdminNotification,
 );
 
 export default adminNotificationRouter;

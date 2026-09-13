@@ -1,20 +1,29 @@
 import adminNotificationModel from "../models/adminNotification.model.js";
+import notificationModel from "../models/notification.model.js";
 import AppError from "../utils/AppError.js";
 
 // جلب إشعارات الـ Admin
-const getAdminNotifications = async (req, res, next) => {
+const getNotifications = async (req, res, next) => {
   try {
-    const notifications = await adminNotificationModel
-      .find()
-      .populate("officeId", "name")
-      .populate("userId", "name email role")
+    console.log("USER ID:", req.user.id);
+
+    const notifications = await notificationModel
+      .find({
+        userId: req.user.id,
+      })
+      .populate("caseId", "caseNumber title")
+      .populate("sessionId", "sessionDate sessionTime")
       .sort({ createdAt: -1 });
 
+    console.log("NOTIFICATIONS FOUND:", notifications.length);
+    console.log("NOTIFICATIONS:", notifications);
+
     return res.status(200).json({
-      message: "تم جلب إشعارات الإدارة بنجاح",
+      message: "تم جلب الإشعارات بنجاح",
       notifications,
     });
   } catch (error) {
+    console.error("GET NOTIFICATIONS ERROR:", error);
     next(error);
   }
 };
@@ -22,7 +31,8 @@ const getAdminNotifications = async (req, res, next) => {
 // عدد الإشعارات غير المقروءة
 const getAdminUnreadCount = async (req, res, next) => {
   try {
-    const count = await adminNotificationModel.countDocuments({
+    const count = await notificationModel.countDocuments({
+      userId: req.user.id,
       isRead: false,
     });
 
@@ -39,8 +49,11 @@ const markAdminNotificationAsRead = async (req, res, next) => {
   const { id } = req.params;
 
   try {
-    const notification = await adminNotificationModel.findByIdAndUpdate(
-      id,
+    const notification = await notificationModel.findOneAndUpdate(
+      {
+        _id: id,
+        userId: req.user.id,
+      },
       {
         isRead: true,
       },
@@ -61,12 +74,12 @@ const markAdminNotificationAsRead = async (req, res, next) => {
     next(error);
   }
 };
-
 // تحديد كل الإشعارات كمقروءة
 const markAllAdminNotificationsAsRead = async (req, res, next) => {
   try {
-    await adminNotificationModel.updateMany(
+    await notificationModel.updateMany(
       {
+        userId: req.user.id,
         isRead: false,
       },
       {
@@ -82,9 +95,32 @@ const markAllAdminNotificationsAsRead = async (req, res, next) => {
   }
 };
 
+const deleteAdminNotification = async (req, res, next) => {
+  const { id } = req.params;
+
+  try {
+    const notification = await notificationModel.findOneAndDelete({
+      _id: id,
+      userId: req.user.id,
+    });
+
+    if (!notification) {
+      throw new AppError("لم يتم العثور على الإشعار", 404);
+    }
+
+    return res.status(200).json({
+      message: "تم حذف الإشعار بنجاح",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+
 export {
-  getAdminNotifications,
+  getNotifications,
   getAdminUnreadCount,
   markAdminNotificationAsRead,
-  markAllAdminNotificationsAsRead,
+  markAllAdminNotificationsAsRead,deleteAdminNotification
 };
