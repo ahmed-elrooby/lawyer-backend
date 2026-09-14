@@ -144,7 +144,7 @@ const forgotPassword = async (req, res, next) => {
 const resetPassword = async (req, res, next) => {
   try {
     const { token } = req.params;
-    const { password } = req.body;
+    const { password } = req.body || {};
 
     if (!token) {
       throw new AppError("التوكن مطلوب", 400);
@@ -154,23 +154,19 @@ const resetPassword = async (req, res, next) => {
       throw new AppError("كلمة المرور الجديدة مطلوبة", 400);
     }
 
-    if (password.length < 6) {
-      throw new AppError("كلمة المرور يجب أن تكون 6 أحرف على الأقل", 400);
-    }
-
     const user = await UserModel.findOne({
       resetPasswordToken: token,
       resetPasswordExpires: { $gt: new Date() },
     });
 
     if (!user) {
-      throw new AppError("الرابط غير صالح أو منتهي الصلاحية", 400);
+      throw new AppError(
+        "الرابط غير صالح أو منتهي الصلاحية",
+        400
+      );
     }
 
-    // تغيير كلمة المرور
     user.password = password;
-
-    // إلغاء الـ token بعد استخدامه
     user.resetPasswordToken = null;
     user.resetPasswordExpires = null;
 
@@ -183,7 +179,6 @@ const resetPassword = async (req, res, next) => {
     next(error);
   }
 };
-
 const updateProfile = async (req, res, next) => {
   const { name, phone } = req.body;
 
