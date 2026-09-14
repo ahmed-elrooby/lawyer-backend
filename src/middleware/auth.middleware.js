@@ -11,16 +11,11 @@ const authMiddleware = (req, res, next) => {
 
     const [type, token] = authHeader.split(" ");
 
-    console.log("type", type);
-    console.log("token", token);
-
     if (type !== "Bearer" || !token) {
       throw new AppError("يجب تسجيل الدخول", 401);
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    console.log(decoded);
 
     req.user = decoded;
 

@@ -1,15 +1,38 @@
+import mongoose from "mongoose";
+
 import AttachmentCategoryModel from "../models/attachmentCategories.model.js";
 import AppError from "./../utils/AppError.js";
+import getCaseTypeOwner from "../utils/caseTypeOwner.js";
 
+const getOwnerFilter = (owner) => {
+  if (owner.ownerType === "office") {
+    return {
+      ownerType: "office",
+      officeId: owner.officeId,
+    };
+  }
+
+  return {
+    ownerType: "lawyer",
+    lawyerId: owner.lawyerId,
+  };
+};
+
+// إضافة تصنيف
 const addCategory = async (req, res, next) => {
   try {
     const { name, description } = req.body;
 
-    if (!name) {
+    if (!name || !name.trim()) {
       throw new AppError("اسم القسم مطلوب", 400);
     }
 
+    const owner = await getCaseTypeOwner(req.user.id);
+
+    const ownerFilter = getOwnerFilter(owner);
+
     const existingCategory = await AttachmentCategoryModel.findOne({
+      ...ownerFilter,
       name: name.trim(),
     });
 
@@ -18,8 +41,12 @@ const addCategory = async (req, res, next) => {
     }
 
     const category = new AttachmentCategoryModel({
-      name,
-      description,
+      name: name.trim(),
+      description: description?.trim() || "",
+      ownerType: owner.ownerType,
+      officeId: owner.officeId,
+      lawyerId: owner.lawyerId,
+      createdBy: req.user.id,
     });
 
     await category.save();
@@ -28,31 +55,55 @@ const addCategory = async (req, res, next) => {
       message: "تم إنشاء القسم بنجاح",
       category,
     });
-  } catch (e) {
-    next(e);
+  } catch (error) {
+    if (error.code === 11000) {
+      return next(new AppError("هذا القسم موجود بالفعل", 409));
+    }
+
+    next(error);
   }
 };
-const getCategories = async (req, res) => {
+
+// جلب الأقسام
+const getCategories = async (req, res, next) => {
   try {
+    const owner = await getCaseTypeOwner(req.user.id);
+
+    const ownerFilter = getOwnerFilter(owner);
+
     const categories = await AttachmentCategoryModel.find({
+      ...ownerFilter,
       isActive: true,
+    }).sort({
+      createdAt: -1,
     });
+
     return res.status(200).json({
       message: "تم الحصول على الأقسام بنجاح",
       categories,
     });
-  } catch (e) {
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+  } catch (error) {
+    next(error);
   }
 };
+
+// حذف القسم - Soft Delete
 const deleteCategory = async (req, res, next) => {
   const { id } = req.params;
 
   try {
-    const category = await AttachmentCategoryModel.findById(id);
+    if (!mongoose.isValidObjectId(id)) {
+      throw new AppError("معرف القسم غير صالح", 400);
+    }
+
+    const owner = await getCaseTypeOwner(req.user.id);
+
+    const ownerFilter = getOwnerFilter(owner);
+
+    const category = await AttachmentCategoryModel.findOne({
+      _id: id,
+      ...ownerFilter,
+    });
 
     if (!category) {
       throw new AppError("القسم غير موجود", 404);
@@ -70,17 +121,29 @@ const deleteCategory = async (req, res, next) => {
       message: "تم حذف القسم بنجاح",
       category,
     });
-  } catch (e) {
-    next(e);
+  } catch (error) {
+    next(error);
   }
 };
 
+// تعديل القسم
 const updateCategory = async (req, res, next) => {
   const { id } = req.params;
-  const { name, description } = req.body;
+  const { name, description, isActive } = req.body;
 
   try {
-    const category = await AttachmentCategoryModel.findById(id);
+    if (!mongoose.isValidObjectId(id)) {
+      throw new AppError("معرف القسم غير صالح", 400);
+    }
+
+    const owner = await getCaseTypeOwner(req.user.id);
+
+    const ownerFilter = getOwnerFilter(owner);
+
+    const category = await AttachmentCategoryModel.findOne({
+      _id: id,
+      ...ownerFilter,
+    });
 
     if (!category) {
       throw new AppError("القسم غير موجود", 404);
@@ -95,20 +158,15 @@ const updateCategory = async (req, res, next) => {
         throw new AppError("اسم القسم مطلوب", 400);
       }
 
-      const existingCategory = await AttachmentCategoryModel.findOne({
-        name: name.trim(),
-        _id: { $ne: id },
-      });
-
-      if (existingCategory) {
-        throw new AppError("هذا القسم موجود بالفعل", 409);
-      }
-
       category.name = name.trim();
     }
 
     if (description !== undefined) {
-      category.description = description;
+      category.description = description.trim();
+    }
+
+    if (isActive !== undefined) {
+      category.isActive = isActive;
     }
 
     await category.save();
@@ -117,16 +175,31 @@ const updateCategory = async (req, res, next) => {
       message: "تم تحديث القسم بنجاح",
       category,
     });
-  } catch (e) {
-    next(e);
+  } catch (error) {
+    if (error.code === 11000) {
+      return next(new AppError("هذا القسم موجود بالفعل", 409));
+    }
+
+    next(error);
   }
 };
+
+// جلب قسم واحد
 const getCategoryById = async (req, res, next) => {
   const { id } = req.params;
 
   try {
+    if (!mongoose.isValidObjectId(id)) {
+      throw new AppError("معرف القسم غير صالح", 400);
+    }
+
+    const owner = await getCaseTypeOwner(req.user.id);
+
+    const ownerFilter = getOwnerFilter(owner);
+
     const category = await AttachmentCategoryModel.findOne({
       _id: id,
+      ...ownerFilter,
       isActive: true,
     });
 
@@ -138,13 +211,11 @@ const getCategoryById = async (req, res, next) => {
       message: "تم الحصول على القسم بنجاح",
       category,
     });
-  } catch (e) {
-    return res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+  } catch (error) {
+    next(error);
   }
 };
+
 export {
   addCategory,
   getCategories,

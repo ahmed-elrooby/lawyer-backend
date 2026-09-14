@@ -51,6 +51,7 @@ const officeSchema = new mongoose.Schema(
   },
 );
 
-const officeModel = mongoose.model("Office", officeSchema);
+const officeModel =
+  mongoose.models.Office || mongoose.model("Office", officeSchema);
 
 export default officeModel;

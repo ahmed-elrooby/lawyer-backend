@@ -2,10 +2,6 @@ import AppError from "../utils/AppError.js";
 
 const roleMiddleware = (...allowedRoles) => {
   return (req, res, next) => {
-    console.log("USER:", req.user);
-    console.log("ROLE:", req.user?.role);
-    console.log("ALLOWED:", allowedRoles);
-
     if (!req.user) {
       return next(new AppError("يجب تسجيل الدخول", 401));
     }
