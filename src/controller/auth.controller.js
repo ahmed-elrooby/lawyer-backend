@@ -89,7 +89,7 @@ const forgotPassword = async (req, res, next) => {
     await user.save();
 
     // رابط صفحة تغيير الباسورد في الـ Frontend
-    const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    const resetLink = `${process.env.FRONTEND_URL}/ResetPassword/${resetToken}`;
 
     // إرسال الإيميل
     await sendEmail({
