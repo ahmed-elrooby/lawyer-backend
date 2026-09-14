@@ -1,5 +1,5 @@
+import officeModel from "../models/office.model.js";
 import UserModel from "../models/User.model.js";
-import OfficeModel from "../models/Office.model.js";
 import AppError from "./AppError.js";
 
 const getCaseTypeOwner = async (userId) => {
@@ -15,7 +15,7 @@ const getCaseTypeOwner = async (userId) => {
       throw new AppError("المستخدم غير مرتبط بمكتب", 400);
     }
 
-    const office = await OfficeModel.findById(user.officeId);
+    const office = await officeModel.findById(user.officeId);
 
     if (!office) {
       throw new AppError("المكتب غير موجود", 404);
