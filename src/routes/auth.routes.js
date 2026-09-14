@@ -6,6 +6,7 @@ import {
   login,
   logout,
   resetPassword,
+  updateProfile,
 } from "../controller/auth.controller.js";
 
 import authMiddleware from "../middleware/auth.middleware.js";
@@ -15,13 +16,19 @@ import {
   loginSchema,
   resetPasswordSchema,
 } from "../validator/auth.validation.js";
+import upload from "../middleware/upload.middleware.js";
 
 const authRoutes = express.Router();
 
 authRoutes.post("/login", validate(loginSchema), login);
 
 authRoutes.get("/profile", authMiddleware, getProfile);
-authRoutes.post("/logout", authMiddleware, logout);
+authRoutes.put(
+  "/profile",
+  authMiddleware,
+  upload.single("profileImage"),
+  updateProfile,
+);authRoutes.post("/logout", authMiddleware, logout);
 authRoutes.post(
   "/forgot-password",
   validate(forgotPasswordSchema),

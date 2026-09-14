@@ -4,6 +4,7 @@ import UserModel from "../models/User.model.js";
 import crypto from "crypto";
 import sendEmail from "../utils/sendEmail.js";
 import AppError from "../utils/AppError.js";
+import cloudinary from "../config/cloudinary.js";
 // get user email find if exist or not
 const login = async (req, res, next) => {
   const { email, password } = req.body;
@@ -182,4 +183,76 @@ const resetPassword = async (req, res, next) => {
     next(error);
   }
 };
-export { login, getProfile, logout, forgotPassword, resetPassword };
+
+const updateProfile = async (req, res, next) => {
+  const { name, phone } = req.body;
+
+  try {
+
+    const user = await UserModel.findById(req.user.id);
+
+    if (!user) {
+      throw new AppError("المستخدم غير موجود", 404);
+    }
+
+   
+    user.name = name ?? user.name;
+    user.phone = phone ?? user.phone;
+
+
+    if (req.file) {
+      const oldPublicId = user.profileImage?.publicId;
+
+      const result = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder: "lawyer-app/users",
+            resource_type: "image",
+          },
+          (error, result) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve(result);
+            }
+          },
+        );
+
+        uploadStream.end(req.file.buffer);
+      });
+
+      // Save New Image
+      user.profileImage = {
+        url: result.secure_url,
+        publicId: result.public_id,
+      };
+
+      // Delete Old Image
+      if (oldPublicId) {
+        await cloudinary.uploader.destroy(oldPublicId, {
+          resource_type: "image",
+        });
+      }
+    }
+
+    // ==========================================
+    // Save Changes
+    // ==========================================
+
+    await user.save();
+
+    // ==========================================
+    // Response
+    // ==========================================
+
+    return res.status(200).json({
+      message: "تم تحديث البيانات الشخصية بنجاح",
+      user,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+export { login, getProfile, logout, forgotPassword, resetPassword ,updateProfile};

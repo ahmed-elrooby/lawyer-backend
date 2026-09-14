@@ -59,14 +59,15 @@ const getTimeLine = async (req, res, next) => {
     }
 
     const timeLine = await timeLineModel
-      .find(filter)
-      .populate("caseId", "caseNumber title")
-      .populate("clientId", "name phone")
-      .populate("sessionId", "title sessionDate sessionTime")
-      .populate("attachmentId", "name originalName")
-      .populate("noteId", "content")
-      .populate("createdBy", "name email")
-      .sort({ createdAt: -1 });
+      
+  .find(filter)
+  .populate("caseId", "caseNumber title")
+  .populate("clientId", "name phone")
+  .populate("sessionId", "title sessionDate sessionTime")
+  .populate("attachmentId", "name originalName")
+  .populate("noteId", "content")
+  .populate("createdBy", "name email role")
+  .sort({ createdAt: -1 });    
 
     return res.status(200).json({
       message: "تم استرجاع الـ Timeline بنجاح",
