@@ -1,3 +1,4 @@
+
 import { Readable } from "stream";
 
 import cloudinary from "../config/cloudinary.js";
@@ -17,6 +18,8 @@ import AppError from "../utils/AppError.js";
 // Upload To Cloudinary
 // ==========================================
 
+
+
 const uploadToCloudinary = (buffer, originalName) => {
   return new Promise((resolve, reject) => {
     const extension = originalName.includes(".")
@@ -31,13 +34,14 @@ const uploadToCloudinary = (buffer, originalName) => {
       {
         folder: "lawyer-system/attachments",
         resource_type: "raw",
+        type: "upload",
         public_id: `${Date.now()}-${fileName}${extension}`,
       },
       (error, result) => {
         if (error) {
           reject(error);
         } else {
-          resolve(result);
+      resolve(result);
         }
       },
     );
@@ -45,6 +49,9 @@ const uploadToCloudinary = (buffer, originalName) => {
     Readable.from(buffer).pipe(uploadStream);
   });
 };
+
+
+
 
 // ==========================================
 // Delete From Cloudinary
@@ -57,10 +64,10 @@ const deleteFromCloudinary = async (publicId) => {
 };
 
 // ==========================================
-// Get Office ID
+// Get User Scope
 // ==========================================
 
-const getOfficeId = async (req) => {
+const getAttachmentScope = async (req) => {
   // ==========================================
   // Office Owner
   // ==========================================
@@ -71,10 +78,14 @@ const getOfficeId = async (req) => {
     });
 
     if (!office) {
-      return null;
+      throw new AppError("لم يتم العثور على المكتب", 404);
     }
 
-    return office._id;
+    return {
+      role: "office_owner",
+      officeId: office._id,
+      userId: req.user.id,
+    };
   }
 
   // ==========================================
@@ -82,16 +93,167 @@ const getOfficeId = async (req) => {
   // ==========================================
 
   if (req.user.role === "lawyer") {
-    const user = await UserModel.findById(req.user.id);
+    const user = await UserModel.findById(req.user.id).select("officeId");
 
-    if (!user || !user.officeId) {
-      return null;
+    if (!user) {
+      throw new AppError("المستخدم غير موجود", 404);
     }
 
-    return user.officeId;
+    return {
+      role: "lawyer",
+      officeId: user.officeId || null,
+      userId: user._id,
+    };
   }
 
-  return null;
+  throw new AppError("غير مصرح لك بالوصول", 403);
+};
+
+// ==========================================
+// Get Case According To User
+// ==========================================
+
+const getCaseByScope = async (caseId, scope) => {
+  if (!caseId) {
+    return null;
+  }
+
+  const filter = {
+    _id: caseId,
+  };
+
+  // ==========================================
+  // Office User
+  // ==========================================
+
+  if (scope.officeId) {
+    filter.officeId = scope.officeId;
+  }
+
+  // ==========================================
+  // Independent Lawyer
+  // ==========================================
+
+  else {
+    filter.officeId = null;
+    filter.lawyers = scope.userId;
+  }
+
+  return await caseModel.findOne(filter);
+};
+
+// ==========================================
+// Get Client According To User
+// ==========================================
+
+const getClientByScope = async (clientId, scope) => {
+  if (!clientId) {
+    return null;
+  }
+
+  const filter = {
+    _id: clientId,
+  };
+
+  // ==========================================
+  // Office User
+  // ==========================================
+
+  if (scope.officeId) {
+    filter.officeId = scope.officeId;
+  }
+
+  // ==========================================
+  // Independent Lawyer
+  // ==========================================
+
+  else {
+    filter.officeId = null;
+    filter.createdBy = scope.userId;
+  }
+
+  return await ClientModel.findOne(filter);
+};
+
+// ==========================================
+// Get Session According To User
+// ==========================================
+
+const getSessionByScope = async (sessionId, scope) => {
+  if (!sessionId) {
+    return null;
+  }
+
+  const filter = {
+    _id: sessionId,
+  };
+
+  // ==========================================
+  // Office User
+  // ==========================================
+
+  if (scope.officeId) {
+    filter.officeId = scope.officeId;
+
+    return await sessionModel.findOne(filter);
+  }
+
+  // ==========================================
+  // Independent Lawyer
+  // ==========================================
+
+  const lawyerCases = await caseModel
+    .find({
+      officeId: null,
+      lawyers: scope.userId,
+    })
+    .select("_id");
+
+  const caseIds = lawyerCases.map((item) => item._id);
+
+  filter.officeId = null;
+
+  filter.caseId = {
+    $in: caseIds,
+  };
+
+  return await sessionModel.findOne(filter);
+};
+
+// ==========================================
+// Validate Case / Client / Session
+// ==========================================
+
+const validateRelationships = ({
+  caseData,
+  clientData,
+  sessionData,
+}) => {
+  // ==========================================
+  // Case + Client
+  // ==========================================
+
+  if (caseData && clientData) {
+    if (
+      caseData.clientId &&
+      caseData.clientId.toString() !== clientData._id.toString()
+    ) {
+      throw new AppError("العميل لا يتبع القضية المحددة", 400);
+    }
+  }
+
+  // ==========================================
+  // Session + Case
+  // ==========================================
+
+  if (sessionData && caseData) {
+    if (
+      sessionData.caseId &&
+      sessionData.caseId.toString() !== caseData._id.toString()
+    ) {
+      throw new AppError("الجلسة لا تتبع القضية المحددة", 400);
+    }
+  }
 };
 
 // ==========================================
@@ -104,34 +266,32 @@ const handleAddAttachment = async (req, res, next) => {
       throw new AppError("الملف مطلوب", 400);
     }
 
-    const { caseId, clientId, sessionId, categoryId, name, description } =
-      req.body;
+    const {
+      caseId,
+      clientId,
+      sessionId,
+      categoryId,
+      name,
+      description,
+    } = req.body;
 
     // ==========================================
-    // Validate Category
+    // Basic Validation
     // ==========================================
 
     if (!categoryId) {
       throw new AppError("تصنيف الملف مطلوب", 400);
     }
 
-    // ==========================================
-    // Validate Name
-    // ==========================================
-
     if (!name || !name.trim()) {
       throw new AppError("اسم الملف مطلوب", 400);
     }
 
     // ==========================================
-    // Get Office ID
+    // Get Scope
     // ==========================================
 
-    const officeId = await getOfficeId(req);
-
-    if (!officeId) {
-      throw new AppError("غير مصرح لك برفع الملفات", 403);
-    }
+    const scope = await getAttachmentScope(req);
 
     // ==========================================
     // Check Category
@@ -147,86 +307,99 @@ const handleAddAttachment = async (req, res, next) => {
     }
 
     // ==========================================
-    // Check Case
+    // Get Case
     // ==========================================
 
     let caseData = null;
 
     if (caseId) {
-      caseData = await caseModel.findOne({
-        _id: caseId,
-        officeId,
-      });
+      caseData = await getCaseByScope(caseId, scope);
 
       if (!caseData) {
-        throw new AppError("القضية غير موجودة داخل المكتب", 404);
+        throw new AppError(
+          "القضية غير موجودة أو غير مصرح لك بالوصول إليها",
+          404,
+        );
       }
     }
 
     // ==========================================
-    // Check Client
+    // Client
+    // ==========================================
+
+    let finalClientId = clientId || null;
+
+    // ==========================================
+    // If Case Exists
+    // Get Client Automatically From Case
+    // ==========================================
+
+    if (caseData?.clientId) {
+      finalClientId = caseData.clientId.toString();
+    }
+
+    // ==========================================
+    // Get Client
     // ==========================================
 
     let clientData = null;
 
-    if (clientId) {
-      clientData = await ClientModel.findOne({
-        _id: clientId,
-        officeId,
-      });
+    if (finalClientId) {
+      clientData = await getClientByScope(
+        finalClientId,
+        scope,
+      );
 
       if (!clientData) {
-        throw new AppError("العميل غير موجود داخل المكتب", 404);
+        throw new AppError(
+          "العميل غير موجود أو غير مصرح لك بالوصول إليه",
+          404,
+        );
       }
     }
 
     // ==========================================
-    // Check Session
+    // Get Session
     // ==========================================
 
     let sessionData = null;
 
     if (sessionId) {
-      sessionData = await sessionModel.findOne({
-        _id: sessionId,
-        officeId,
-      });
+      sessionData = await getSessionByScope(
+        sessionId,
+        scope,
+      );
 
       if (!sessionData) {
-        throw new AppError("الجلسة غير موجودة داخل المكتب", 404);
+        throw new AppError(
+          "الجلسة غير موجودة أو غير مصرح لك بالوصول إليها",
+          404,
+        );
       }
     }
 
     // ==========================================
-    // Check Case + Client Relationship
+    // Validate Relationships
     // ==========================================
 
-    if (caseData && clientData) {
-      if (caseData.clientId.toString() !== clientData._id.toString()) {
-        throw new AppError("العميل لا يتبع القضية المحددة", 400);
-      }
-    }
-
-    // ==========================================
-    // Check Session + Case Relationship
-    // ==========================================
-
-    if (sessionData && caseData) {
-      if (sessionData.caseId.toString() !== caseData._id.toString()) {
-        throw new AppError("الجلسة لا تتبع القضية المحددة", 400);
-      }
-    }
+    validateRelationships({
+      caseData,
+      clientData,
+      sessionData,
+    });
 
     // ==========================================
     // File Extension
     // ==========================================
 
     const extension = req.file.originalname.includes(".")
-      ? req.file.originalname.substring(req.file.originalname.lastIndexOf("."))
+      ? req.file.originalname.substring(
+          req.file.originalname.lastIndexOf("."),
+        )
       : "";
 
     // ==========================================
-    // Upload To Cloudinary
+    // Upload
     // ==========================================
 
     const cloudinaryResult = await uploadToCloudinary(
@@ -235,15 +408,15 @@ const handleAddAttachment = async (req, res, next) => {
     );
 
     // ==========================================
-    // Save Attachment
+    // Create Attachment
     // ==========================================
 
     const attachment = new AttachmentModel({
-      officeId,
+      officeId: scope.officeId,
 
       caseId: caseId || null,
 
-      clientId: clientId || null,
+      clientId: finalClientId,
 
       sessionId: sessionId || null,
 
@@ -275,16 +448,26 @@ const handleAddAttachment = async (req, res, next) => {
     // ==========================================
 
     await createTimeLine({
-      officeId,
+      officeId: scope.officeId,
+
       caseId: attachment.caseId,
+
       clientId: attachment.clientId,
+
       sessionId: attachment.sessionId,
+
       attachmentId: attachment._id,
+
       type: "attachment_uploaded",
+
       title: "تم رفع مستند جديد",
+
       description: `تم رفع المستند "${attachment.name}"${
-        caseData ? ` للقضية رقم ${caseData.caseNumber}` : ""
+        caseData
+          ? ` للقضية رقم ${caseData.caseNumber}`
+          : ""
       }`,
+
       createdBy: req.user.id,
     });
 
@@ -302,26 +485,48 @@ const handleAddAttachment = async (req, res, next) => {
 };
 
 // ==========================================
-// Get Documents
+// Get All Documents
 // ==========================================
 
 const getDocumnts = async (req, res, next) => {
   try {
-    const officeId = await getOfficeId(req);
+    const scope = await getAttachmentScope(req);
 
-    if (!officeId) {
-      throw new AppError("غير مصرح لك بعرض الملفات", 403);
+    let filter = {};
+
+    // ==========================================
+    // Office
+    // ==========================================
+
+    if (scope.officeId) {
+      filter = {
+        officeId: scope.officeId,
+      };
     }
 
-    const attachments = await AttachmentModel.find({
-      officeId,
-    })
+    // ==========================================
+    // Independent Lawyer
+    // ==========================================
+
+    else {
+      filter = {
+        officeId: null,
+        uploadedBy: scope.userId,
+      };
+    }
+
+    const attachments = await AttachmentModel.find(filter)
       .populate("caseId", "caseNumber title")
       .populate("clientId", "name phone")
-      .populate("sessionId", "title sessionDate sessionTime")
+      .populate(
+        "sessionId",
+        "sessionDate sessionTime",
+      )
       .populate("categoryId", "name")
       .populate("uploadedBy", "name email")
-      .sort({ createdAt: -1 });
+      .sort({
+        createdAt: -1,
+      });
 
     return res.status(200).json({
       message: "تم جلب الملفات بنجاح",
@@ -341,19 +546,46 @@ const getDocumentById = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const officeId = await getOfficeId(req);
+    const scope = await getAttachmentScope(req);
 
-    if (!officeId) {
-      throw new AppError("غير مصرح لك بعرض الملفات", 403);
+    const filter = {
+      _id: id,
+    };
+
+    // ==========================================
+    // Office
+    // ==========================================
+
+    if (scope.officeId) {
+      filter.officeId = scope.officeId;
     }
 
-    const attachment = await AttachmentModel.findOne({
-      _id: id,
-      officeId,
-    });
+    // ==========================================
+    // Independent Lawyer
+    // ==========================================
+
+    else {
+      filter.officeId = null;
+      filter.uploadedBy = scope.userId;
+    }
+
+    const attachment = await AttachmentModel.findOne(
+      filter,
+    )
+      .populate("caseId", "caseNumber title")
+      .populate("clientId", "name phone")
+      .populate(
+        "sessionId",
+        "sessionDate sessionTime",
+      )
+      .populate("categoryId", "name")
+      .populate("uploadedBy", "name email");
 
     if (!attachment) {
-      throw new AppError("لم يتم العثور على الملف", 404);
+      throw new AppError(
+        "لم يتم العثور على الملف",
+        404,
+      );
     }
 
     return res.status(200).json({
@@ -373,45 +605,63 @@ const deleteDocument = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const officeId = await getOfficeId(req);
+    const scope = await getAttachmentScope(req);
 
-    if (!officeId) {
-      throw new AppError("غير مصرح لك بحذف الملفات", 403);
+    const filter = {
+      _id: id,
+    };
+
+    // ==========================================
+    // Office
+    // ==========================================
+
+    if (scope.officeId) {
+      filter.officeId = scope.officeId;
+    }
+
+    // ==========================================
+    // Independent Lawyer
+    // ==========================================
+
+    else {
+      filter.officeId = null;
+      filter.uploadedBy = scope.userId;
     }
 
     // ==========================================
     // Find Attachment
     // ==========================================
 
-    const attachment = await AttachmentModel.findOne({
-      _id: id,
-      officeId,
-    });
+    const attachment = await AttachmentModel.findOne(
+      filter,
+    );
 
     if (!attachment) {
-      throw new AppError("لم يتم العثور على الملف", 404);
+      throw new AppError(
+        "لم يتم العثور على الملف",
+        404,
+      );
     }
 
     // ==========================================
-    // Get Case
+    // Get Case For Timeline
     // ==========================================
 
     let caseData = null;
 
     if (attachment.caseId) {
-      caseData = await caseModel.findOne({
-        _id: attachment.caseId,
-        officeId,
-      });
+      caseData = await getCaseByScope(
+        attachment.caseId,
+        scope,
+      );
     }
 
     // ==========================================
     // Delete From MongoDB
     // ==========================================
 
-    await AttachmentModel.findOneAndDelete({
-      _id: id,
-      officeId,
+    await AttachmentModel.deleteOne({
+      _id: attachment._id,
     });
 
     // ==========================================
@@ -419,7 +669,9 @@ const deleteDocument = async (req, res, next) => {
     // ==========================================
 
     if (attachment.publicId) {
-      await deleteFromCloudinary(attachment.publicId);
+      await deleteFromCloudinary(
+        attachment.publicId,
+      );
     }
 
     // ==========================================
@@ -427,16 +679,26 @@ const deleteDocument = async (req, res, next) => {
     // ==========================================
 
     await createTimeLine({
-      officeId,
+      officeId: scope.officeId,
+
       caseId: attachment.caseId,
+
       clientId: attachment.clientId,
+
       sessionId: attachment.sessionId,
+
       attachmentId: attachment._id,
+
       type: "attachment_deleted",
+
       title: "تم حذف مستند",
+
       description: `تم حذف المستند "${attachment.name}"${
-        caseData ? ` من القضية رقم ${caseData.caseNumber}` : ""
+        caseData
+          ? ` من القضية رقم ${caseData.caseNumber}`
+          : ""
       }`,
+
       createdBy: req.user.id,
     });
 
@@ -457,29 +719,52 @@ const updateDocument = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const officeId = await getOfficeId(req);
+    const scope = await getAttachmentScope(req);
 
-    if (!officeId) {
-      throw new AppError("غير مصرح لك بتعديل الملفات", 403);
+    const filter = {
+      _id: id,
+    };
+
+    // ==========================================
+    // Office
+    // ==========================================
+
+    if (scope.officeId) {
+      filter.officeId = scope.officeId;
+    }
+
+    // ==========================================
+    // Independent Lawyer
+    // ==========================================
+
+    else {
+      filter.officeId = null;
+      filter.uploadedBy = scope.userId;
     }
 
     // ==========================================
     // Find Attachment
     // ==========================================
 
-    const attachment = await AttachmentModel.findOne({
-      _id: id,
-      officeId,
-    });
+    const attachment = await AttachmentModel.findOne(
+      filter,
+    );
 
     if (!attachment) {
-      throw new AppError("لم يتم العثور على الملف", 404);
+      throw new AppError(
+        "لم يتم العثور على الملف",
+        404,
+      );
     }
 
-    const { name, categoryId, description, caseId, clientId, sessionId } =
-      req.body;
-
-    const updateData = {};
+    const {
+      name,
+      categoryId,
+      description,
+      caseId,
+      clientId,
+      sessionId,
+    } = req.body;
 
     // ==========================================
     // Name
@@ -487,10 +772,13 @@ const updateDocument = async (req, res, next) => {
 
     if (name !== undefined) {
       if (!name.trim()) {
-        throw new AppError("اسم الملف مطلوب", 400);
+        throw new AppError(
+          "اسم الملف مطلوب",
+          400,
+        );
       }
 
-      updateData.name = name.trim();
+      attachment.name = name.trim();
     }
 
     // ==========================================
@@ -498,7 +786,8 @@ const updateDocument = async (req, res, next) => {
     // ==========================================
 
     if (description !== undefined) {
-      updateData.description = description?.trim() || "";
+      attachment.description =
+        description?.trim() || "";
     }
 
     // ==========================================
@@ -506,218 +795,200 @@ const updateDocument = async (req, res, next) => {
     // ==========================================
 
     if (categoryId !== undefined) {
-      const category = await AttachmentCategoryModel.findOne({
-        _id: categoryId,
-        isActive: true,
-      });
+      const category =
+        await AttachmentCategoryModel.findOne({
+          _id: categoryId,
+          isActive: true,
+        });
 
       if (!category) {
-        throw new AppError("تصنيف الملف غير موجود أو غير مفعل", 404);
+        throw new AppError(
+          "تصنيف الملف غير موجود أو غير مفعل",
+          404,
+        );
       }
 
-      updateData.categoryId = categoryId;
+      attachment.categoryId = categoryId;
     }
 
     // ==========================================
-    // Case
+    // Final Case
+    // ==========================================
+
+    const finalCaseId =
+      caseId !== undefined
+        ? caseId || null
+        : attachment.caseId?.toString() || null;
+
+    // ==========================================
+    // Get Case
     // ==========================================
 
     let caseData = null;
 
-    if (caseId !== undefined) {
-      if (caseId) {
-        caseData = await caseModel.findOne({
-          _id: caseId,
-          officeId,
-        });
+    if (finalCaseId) {
+      caseData = await getCaseByScope(
+        finalCaseId,
+        scope,
+      );
 
-        if (!caseData) {
-          throw new AppError("القضية غير موجودة داخل المكتب", 404);
-        }
-
-        updateData.caseId = caseId;
-      } else {
-        updateData.caseId = null;
+      if (!caseData) {
+        throw new AppError(
+          "القضية غير موجودة أو غير مصرح لك بالوصول إليها",
+          404,
+        );
       }
     }
 
     // ==========================================
-    // Client
+    // Final Client
+    // ==========================================
+
+    let finalClientId =
+      clientId !== undefined
+        ? clientId || null
+        : attachment.clientId?.toString() || null;
+
+    // ==========================================
+    // Get Client Automatically From Case
+    // ==========================================
+
+    if (caseData?.clientId) {
+      finalClientId =
+        caseData.clientId.toString();
+    }
+
+    // ==========================================
+    // Get Client
     // ==========================================
 
     let clientData = null;
 
-    if (clientId !== undefined) {
-      if (clientId) {
-        clientData = await ClientModel.findOne({
-          _id: clientId,
-          officeId,
-        });
+    if (finalClientId) {
+      clientData = await getClientByScope(
+        finalClientId,
+        scope,
+      );
 
-        if (!clientData) {
-          throw new AppError("العميل غير موجود داخل المكتب", 404);
-        }
-
-        updateData.clientId = clientId;
-      } else {
-        updateData.clientId = null;
+      if (!clientData) {
+        throw new AppError(
+          "العميل غير موجود أو غير مصرح لك بالوصول إليه",
+          404,
+        );
       }
     }
 
     // ==========================================
-    // Session
+    // Final Session
+    // ==========================================
+
+    const finalSessionId =
+      sessionId !== undefined
+        ? sessionId || null
+        : attachment.sessionId?.toString() || null;
+
+    // ==========================================
+    // Get Session
     // ==========================================
 
     let sessionData = null;
 
-    if (sessionId !== undefined) {
-      if (sessionId) {
-        sessionData = await sessionModel.findOne({
-          _id: sessionId,
-          officeId,
-        });
+    if (finalSessionId) {
+      sessionData = await getSessionByScope(
+        finalSessionId,
+        scope,
+      );
 
-        if (!sessionData) {
-          throw new AppError("الجلسة غير موجودة داخل المكتب", 404);
-        }
-
-        updateData.sessionId = sessionId;
-      } else {
-        updateData.sessionId = null;
-      }
-    }
-
-    // ==========================================
-    // Case + Client Relationship
-    // ==========================================
-
-    const finalCaseId =
-      caseId !== undefined ? caseId : attachment.caseId?.toString();
-
-    const finalClientId =
-      clientId !== undefined ? clientId : attachment.clientId?.toString();
-
-    if (finalCaseId && finalClientId) {
-      if (!caseData) {
-        caseData = await caseModel.findOne({
-          _id: finalCaseId,
-          officeId,
-        });
-      }
-
-      if (!clientData) {
-        clientData = await ClientModel.findOne({
-          _id: finalClientId,
-          officeId,
-        });
-      }
-
-      if (
-        caseData &&
-        clientData &&
-        caseData.clientId.toString() !== clientData._id.toString()
-      ) {
-        throw new AppError("العميل لا يتبع القضية المحددة", 400);
-      }
-    }
-
-    // ==========================================
-    // Session + Case Relationship
-    // ==========================================
-
-    const finalSessionId =
-      sessionId !== undefined ? sessionId : attachment.sessionId?.toString();
-
-    if (finalSessionId && finalCaseId) {
       if (!sessionData) {
-        sessionData = await sessionModel.findOne({
-          _id: finalSessionId,
-          officeId,
-        });
-      }
-
-      if (!caseData) {
-        caseData = await caseModel.findOne({
-          _id: finalCaseId,
-          officeId,
-        });
-      }
-
-      if (
-        sessionData &&
-        caseData &&
-        sessionData.caseId.toString() !== caseData._id.toString()
-      ) {
-        throw new AppError("الجلسة لا تتبع القضية المحددة", 400);
+        throw new AppError(
+          "الجلسة غير موجودة أو غير مصرح لك بالوصول إليها",
+          404,
+        );
       }
     }
 
     // ==========================================
-    // Old Cloudinary Public ID
+    // Validate Relationships
     // ==========================================
 
-    const oldPublicId = attachment.publicId;
+    validateRelationships({
+      caseData,
+      clientData,
+      sessionData,
+    });
+
+    // ==========================================
+    // Update Relations
+    // ==========================================
+
+    attachment.caseId = finalCaseId;
+
+    attachment.clientId = finalClientId;
+
+    attachment.sessionId = finalSessionId;
 
     // ==========================================
     // Upload New File
     // ==========================================
 
+    let oldPublicId = null;
+
     if (req.file) {
-      const cloudinaryResult = await uploadToCloudinary(
-        req.file.buffer,
-        req.file.originalname,
-      );
+      oldPublicId = attachment.publicId;
 
-      const extension = req.file.originalname.includes(".")
-        ? req.file.originalname.substring(
-            req.file.originalname.lastIndexOf("."),
-          )
-        : "";
+      const cloudinaryResult =
+        await uploadToCloudinary(
+          req.file.buffer,
+          req.file.originalname,
+        );
 
-      updateData.originalName = req.file.originalname;
+      const extension =
+        req.file.originalname.includes(".")
+          ? req.file.originalname.substring(
+              req.file.originalname.lastIndexOf("."),
+            )
+          : "";
 
-      updateData.url = cloudinaryResult.secure_url;
+      attachment.originalName =
+        req.file.originalname;
 
-      updateData.publicId = cloudinaryResult.public_id;
+      attachment.url =
+        cloudinaryResult.secure_url;
 
-      updateData.mimeType = req.file.mimetype;
+      attachment.publicId =
+        cloudinaryResult.public_id;
 
-      updateData.size = req.file.size;
+      attachment.mimeType =
+        req.file.mimetype;
 
-      updateData.extension = extension;
+      attachment.size = req.file.size;
+
+      attachment.extension = extension;
     }
 
     // ==========================================
-    // Update MongoDB
+    // Save
     // ==========================================
 
-    const updatedAttachment = await AttachmentModel.findOneAndUpdate(
-      {
-        _id: id,
-        officeId,
-      },
-      updateData,
-      {
-        new: true,
-        runValidators: true,
-      },
-    );
-
-    if (!updatedAttachment) {
-      throw new AppError("لم يتم العثور على الملف", 404);
-    }
+    await attachment.save();
 
     // ==========================================
-    // Delete Old File From Cloudinary
+    // Delete Old Cloudinary File
     // ==========================================
 
     if (req.file && oldPublicId) {
-      await deleteFromCloudinary(oldPublicId);
+      await deleteFromCloudinary(
+        oldPublicId,
+      );
     }
+
+    // ==========================================
+    // Response
+    // ==========================================
 
     return res.status(200).json({
       message: "تم تعديل الملف بنجاح",
-      attachment: updatedAttachment,
+      attachment,
     });
   } catch (error) {
     next(error);

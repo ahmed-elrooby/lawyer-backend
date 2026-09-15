@@ -9,6 +9,18 @@ const clientSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // صورة العميل
+    profileImage: {
+      url: {
+        type: String,
+        default: null,
+      },
+      publicId: {
+        type: String,
+        default: null,
+      },
+    },
+
     // البريد الإلكتروني
     email: {
       type: String,
@@ -57,7 +69,7 @@ const clientSchema = new mongoose.Schema(
     officeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Office",
-      required: true,
+      default: null,
     },
 
     // المستخدم الذي قام بإنشاء العميل

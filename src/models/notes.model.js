@@ -5,7 +5,7 @@ const notesSchema = new mongoose.Schema(
     officeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Office",
-      required: true,
+      default: null,
     },
 
     caseId: {
@@ -43,6 +43,7 @@ const notesSchema = new mongoose.Schema(
   },
 );
 
-const notesModel = mongoose.model("Note", notesSchema);
+const notesModel =
+  mongoose.models.Note || mongoose.model("Note", notesSchema);
 
 export default notesModel;

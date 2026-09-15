@@ -1,4 +1,3 @@
-
 import * as XLSX from "xlsx";
 
 import caseModel from "../models/case.model.js";
@@ -8,11 +7,9 @@ import sessionModel from "../models/session.model.js";
 import UserModel from "../models/User.model.js";
 import AppError from "../utils/AppError.js";
 
-
 const getDashboardStatistics = async (req, res, next) => {
   try {
     let officeId;
-
 
     if (req.user.role === "office_owner") {
       const office = await officeModel
@@ -29,16 +26,16 @@ const getDashboardStatistics = async (req, res, next) => {
     } else if (req.user.role === "lawyer") {
       const user = await UserModel.findById(req.user.id).select("officeId");
 
-      if (!user || !user.officeId) {
-        throw new AppError("المستخدم غير مرتبط بمكتب", 404);
+      if (!user) {
+        throw new AppError("المستخدم غير موجود", 404);
       }
 
-      officeId = user.officeId;
+      // المحامي ممكن يكون مستقل أو تابع لمكتب
+      officeId = user.officeId || null;
     } else if (req.user.role === "admin") {
       officeId = null;
     }
 
-   
     let clientFilter = {};
     let caseFilter = {};
     let sessionFilter = {};
@@ -46,17 +43,13 @@ const getDashboardStatistics = async (req, res, next) => {
 
     if (req.user.role === "admin") {
       clientFilter = {};
-
       caseFilter = {};
-
       sessionFilter = {};
-
       lawyerFilter = {
         role: "lawyer",
       };
     }
 
-  
     if (req.user.role === "office_owner") {
       clientFilter = {
         officeId,
@@ -76,19 +69,19 @@ const getDashboardStatistics = async (req, res, next) => {
       };
     }
 
-
     if (req.user.role === "lawyer") {
       caseFilter = {
-        officeId,
         lawyers: req.user.id,
       };
 
-      // جلب القضايا المسندة للمحامي
+      if (officeId) {
+        caseFilter.officeId = officeId;
+      }
+
       const assignedCases = await caseModel
         .find(caseFilter)
         .select("_id clientId");
 
-      // IDs القضايا
       const assignedCaseIds = assignedCases.map(
         (caseItem) => caseItem._id
       );
@@ -102,18 +95,24 @@ const getDashboardStatistics = async (req, res, next) => {
       ];
 
       clientFilter = {
-        officeId,
         _id: {
           $in: assignedClientIds,
         },
       };
 
+      if (officeId) {
+        clientFilter.officeId = officeId;
+      }
+
       sessionFilter = {
-        officeId,
         caseId: {
           $in: assignedCaseIds,
         },
       };
+
+      if (officeId) {
+        sessionFilter.officeId = officeId;
+      }
 
       lawyerFilter = {
         _id: req.user.id,
@@ -121,21 +120,18 @@ const getDashboardStatistics = async (req, res, next) => {
       };
     }
 
-
     const [
       totalClients,
       totalCases,
       activeCases,
       reservedForJudgmentCases,
       judgedCases,
-
       totalSessions,
       scheduledSessions,
       attendedSessions,
       postponedSessions,
       completedSessions,
       cancelledSessions,
-
       totalLawyers,
     ] = await Promise.all([
       ClientModel.countDocuments(clientFilter),
@@ -187,67 +183,56 @@ const getDashboardStatistics = async (req, res, next) => {
       UserModel.countDocuments(lawyerFilter),
     ]);
 
+    const statistics = {
+      clients: {
+        total: totalClients,
+      },
 
+      cases: {
+        total: totalCases,
+        active: activeCases,
+        reservedForJudgment: reservedForJudgmentCases,
+        judged: judgedCases,
+      },
+
+      sessions: {
+        total: totalSessions,
+        scheduled: scheduledSessions,
+        attended: attendedSessions,
+        postponed: postponedSessions,
+        completed: completedSessions,
+        cancelled: cancelledSessions,
+      },
+    };
+
+    // عدد المحامين يظهر للـ Admin و Office Owner فقط
+    if (req.user.role !== "lawyer") {
+      statistics.lawyers = {
+        total: totalLawyers,
+      };
+    }
 
     res.status(200).json({
       message: "تم جلب الإحصائيات بنجاح",
-
-      statistics: {
-        clients: {
-          total: totalClients,
-        },
-
-        cases: {
-          total: totalCases,
-          active: activeCases,
-          reservedForJudgment: reservedForJudgmentCases,
-          judged: judgedCases,
-        },
-
-        sessions: {
-          total: totalSessions,
-          scheduled: scheduledSessions,
-          attended: attendedSessions,
-          postponed: postponedSessions,
-          completed: completedSessions,
-          cancelled: cancelledSessions,
-        },
-
-        lawyers: {
-          total: totalLawyers,
-        },
-      },
+      statistics,
     });
   } catch (error) {
     next(error);
   }
 };
 
-
-
 const exportDashboardStatistics = async (req, res, next) => {
   try {
-
-
     if (req.user.role !== "admin") {
-      throw new AppError(
-        "غير مسموح لك بتصدير الإحصائيات",
-        403
-      );
+      throw new AppError("غير مسموح لك بتصدير الإحصائيات", 403);
     }
 
-
-
     const clientFilter = {};
-
     const caseFilter = {};
-
     const sessionFilter = {};
-
     const lawyerFilter = {
       role: "lawyer",
     };
-
 
     const [
       totalClients,
@@ -255,14 +240,12 @@ const exportDashboardStatistics = async (req, res, next) => {
       activeCases,
       reservedForJudgmentCases,
       judgedCases,
-
       totalSessions,
       scheduledSessions,
       attendedSessions,
       postponedSessions,
       completedSessions,
       cancelledSessions,
-
       totalLawyers,
     ] = await Promise.all([
       ClientModel.countDocuments(clientFilter),
@@ -314,12 +297,8 @@ const exportDashboardStatistics = async (req, res, next) => {
       UserModel.countDocuments(lawyerFilter),
     ]);
 
-
-
     const calculatePercentage = (value, total) => {
-      if (!total) {
-        return 0;
-      }
+      if (!total) return 0;
 
       return Math.round((value / total) * 100);
     };
@@ -344,96 +323,90 @@ const exportDashboardStatistics = async (req, res, next) => {
       totalSessions
     );
 
- 
-
     const reportData = [
       ["تقرير إحصائيات النظام"],
       [],
 
       ["القضايا"],
       ["البيان", "العدد", "النسبة"],
+
       ["إجمالي القضايا", totalCases, "100%"],
+
       [
         "القضايا النشطة",
         activeCases,
         `${activeCasesPercentage}%`,
       ],
+
       [
         "القضايا المحجوزة للحكم",
         reservedForJudgmentCases,
         `${reservedForJudgmentPercentage}%`,
       ],
-      [
-        "القضايا التي تم الحكم فيها",
-        judgedCases,
-        "",
-      ],
+
+      ["القضايا التي تم الحكم فيها", judgedCases, ""],
 
       [],
 
       ["الجلسات"],
       ["البيان", "العدد", "النسبة"],
+
       ["إجمالي الجلسات", totalSessions, "100%"],
+
       [
         "الجلسات المجدولة",
         scheduledSessions,
         `${scheduledSessionsPercentage}%`,
       ],
-      [
-        "الجلسات التي تم حضورها",
-        attendedSessions,
-        "",
-      ],
+
+      ["الجلسات التي تم حضورها", attendedSessions, ""],
+
       [
         "الجلسات المؤجلة",
         postponedSessions,
         `${postponedSessionsPercentage}%`,
       ],
-      [
-        "الجلسات المكتملة",
-        completedSessions,
-        "",
-      ],
-      [
-        "الجلسات الملغاة",
-        cancelledSessions,
-        "",
-      ],
+
+      ["الجلسات المكتملة", completedSessions, ""],
+
+      ["الجلسات الملغاة", cancelledSessions, ""],
 
       [],
 
       ["المستخدمون"],
       ["البيان", "العدد"],
+
       ["إجمالي العملاء", totalClients],
+
       ["إجمالي المحامين", totalLawyers],
 
       [],
 
       ["مؤشرات الأداء"],
       ["المؤشر", "النسبة"],
+
       [
         "نسبة القضايا النشطة",
         `${activeCasesPercentage}%`,
       ],
+
       [
         "نسبة القضايا المحجوزة للحكم",
         `${reservedForJudgmentPercentage}%`,
       ],
+
       [
         "نسبة الجلسات المجدولة",
         `${scheduledSessionsPercentage}%`,
       ],
+
       [
         "نسبة الجلسات المؤجلة",
         `${postponedSessionsPercentage}%`,
       ],
     ];
 
-  
-
     const worksheet = XLSX.utils.aoa_to_sheet(reportData);
-
-
 
     const workbook = XLSX.utils.book_new();
 
@@ -443,26 +416,16 @@ const exportDashboardStatistics = async (req, res, next) => {
       "الإحصائيات"
     );
 
-
     worksheet["!cols"] = [
-      {
-        wch: 35,
-      },
-      {
-        wch: 15,
-      },
-      {
-        wch: 15,
-      },
+      { wch: 35 },
+      { wch: 15 },
+      { wch: 15 },
     ];
-
 
     const excelBuffer = XLSX.write(workbook, {
       type: "buffer",
       bookType: "xlsx",
     });
-
- 
 
     res.setHeader(
       "Content-Type",
@@ -479,8 +442,6 @@ const exportDashboardStatistics = async (req, res, next) => {
     next(error);
   }
 };
-
-
 
 export {
   getDashboardStatistics,

@@ -4,11 +4,74 @@ import UserModel from "../models/User.model.js";
 import createTimeLine from "../services/timeline.service.js";
 import AppError from "../utils/AppError.js";
 
+/*
+|--------------------------------------------------------------------------
+| Get User Scope
+|--------------------------------------------------------------------------
+| بنحدد هل المستخدم تابع لمكتب ولا محامي مستقل
+*/
+
+const getUserScope = async (req) => {
+  // =========================
+  // Office Owner
+  // =========================
+  if (req.user.role === "office_owner") {
+    const office = await officeModel.findOne({
+      Owner_id: req.user.id,
+    });
+
+    if (!office) {
+      throw new AppError("لم يتم العثور على المكتب", 404);
+    }
+
+    return {
+      role: "office_owner",
+      officeId: office._id,
+      lawyerId: null,
+    };
+  }
+
+  // =========================
+  // Lawyer
+  // =========================
+  if (req.user.role === "lawyer") {
+    const lawyer = await UserModel.findById(req.user.id).select(
+      "officeId role",
+    );
+
+    if (!lawyer) {
+      throw new AppError("المستخدم غير موجود", 404);
+    }
+
+    return {
+      role: "lawyer",
+      officeId: lawyer.officeId || null,
+      lawyerId: lawyer._id,
+    };
+  }
+
+  // =========================
+  // Admin
+  // =========================
+  if (req.user.role === "admin") {
+    return {
+      role: "admin",
+      officeId: null,
+      lawyerId: null,
+    };
+  }
+
+  throw new AppError("غير مصرح لك بالوصول", 403);
+};
+
+/*
+|--------------------------------------------------------------------------
+| Add Case
+|--------------------------------------------------------------------------
+*/
+
 const handleAddCase = async (req, res, next) => {
   try {
-    let officeId;
-
-    // البيانات القادمة من Frontend
     const {
       clientId,
       lawyers,
@@ -23,40 +86,62 @@ const handleAddCase = async (req, res, next) => {
       notes,
     } = req.body;
 
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
+    const scope = await getUserScope(req);
 
-      if (!office) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
+    let officeId = scope.officeId;
 
-      officeId = office._id;
-    }
+    let caseLawyers = Array.isArray(lawyers)
+      ? lawyers
+      : [];
 
-    // المحامي
+    // ==================================================
+    // Lawyer
+    // ==================================================
+
     if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
+      // المحامي لازم يكون موجود داخل lawyers
+      caseLawyers = [req.user.id];
+    }
 
-      if (!lawyer || !lawyer.officeId) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
+    // ==================================================
+    // Office Owner
+    // ==================================================
+
+    if (req.user.role === "office_owner") {
+      if (!officeId) {
+        throw new AppError(
+          "لم يتم العثور على المكتب",
+          404,
+        );
       }
 
-      officeId = lawyer.officeId;
+      if (!caseLawyers.length) {
+        throw new AppError(
+          "يجب تحديد محامي للقضية",
+          400,
+        );
+      }
     }
 
-    // لو Role غير مسموح
-    if (!officeId) {
-      throw new AppError("غير مسموح لك بإنشاء قضية", 403);
+    // ==================================================
+    // التأكد من وجود محامي
+    // ==================================================
+
+    if (!caseLawyers.length) {
+      throw new AppError(
+        "يجب تحديد محامي للقضية",
+        400,
+      );
     }
 
+    // ==================================================
     // إنشاء القضية
+    // ==================================================
+
     const newCase = new caseModel({
       officeId,
       clientId,
-      lawyers,
+      lawyers: caseLawyers,
       caseTypeId,
       caseNumber,
       title,
@@ -69,6 +154,10 @@ const handleAddCase = async (req, res, next) => {
     });
 
     await newCase.save();
+
+    // ==================================================
+    // Timeline
+    // ==================================================
 
     await createTimeLine({
       officeId,
@@ -88,38 +177,52 @@ const handleAddCase = async (req, res, next) => {
     next(e);
   }
 };
+
+/*
+|--------------------------------------------------------------------------
+| Get Cases
+|--------------------------------------------------------------------------
+*/
+
 const getCases = async (req, res, next) => {
   try {
+    const scope = await getUserScope(req);
+
     let filter = {
       isArchived: false,
     };
 
-    // صاحب المكتب
+    // ==================================================
+    // Office Owner
+    // ==================================================
+
     if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      filter.officeId = office._id;
+      filter.officeId = scope.officeId;
     }
 
-    // المحامي
+    // ==================================================
+    // Lawyer
+    // ==================================================
+
     if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id).select("officeId");
+      // لو المحامي تابع لمكتب
+      if (scope.officeId) {
+        filter.officeId = scope.officeId;
 
-      if (!lawyer || !lawyer.officeId) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
+        filter.lawyers = req.user.id;
       }
 
-      filter.officeId = lawyer.officeId;
+      // لو محامي مستقل
+      else {
+        filter.officeId = null;
+        filter.lawyers = req.user.id;
+      }
     }
 
-    // admin لا يحتاج officeId
-    // وبالتالي سيجلب كل القضايا
+    // ==================================================
+    // Admin
+    // ==================================================
+    // Admin لا يحتاج فلتر officeId
 
     const cases = await caseModel
       .find(filter)
@@ -136,49 +239,58 @@ const getCases = async (req, res, next) => {
     next(e);
   }
 };
+
+/*
+|--------------------------------------------------------------------------
+| Delete Case
+|--------------------------------------------------------------------------
+*/
+
 const deleteCase = async (req, res, next) => {
   try {
-    let officeId;
-
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
-
-      if (!lawyer || !lawyer.officeId) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      officeId = lawyer.officeId;
-    }
-
-    // التأكد من الصلاحية
-    if (!officeId) {
-      throw new AppError("غير مسموح لك بحذف القضية", 403);
-    }
+    const scope = await getUserScope(req);
 
     const { id } = req.params;
 
-    // حذف القضية بشرط تكون تابعة لنفس المكتب
-    const deletedCase = await caseModel.findOneAndDelete({
+    let filter = {
       _id: id,
-      officeId: officeId,
-    });
+    };
+
+    // ==================================================
+    // Office Owner
+    // ==================================================
+
+    if (req.user.role === "office_owner") {
+      filter.officeId = scope.officeId;
+    }
+
+    // ==================================================
+    // Lawyer
+    // ==================================================
+
+    if (req.user.role === "lawyer") {
+      filter.lawyers = req.user.id;
+
+      // محامي تابع لمكتب
+      if (scope.officeId) {
+        filter.officeId = scope.officeId;
+      }
+
+      // محامي مستقل
+      else {
+        filter.officeId = null;
+      }
+    }
+
+    const deletedCase = await caseModel.findOneAndDelete(
+      filter,
+    );
 
     if (!deletedCase) {
-      throw new AppError("لم يتم العثور على القضيه", 404);
+      throw new AppError(
+        "لم يتم العثور على القضية",
+        404,
+      );
     }
 
     res.status(200).json({
@@ -188,54 +300,58 @@ const deleteCase = async (req, res, next) => {
     next(e);
   }
 };
+
+/*
+|--------------------------------------------------------------------------
+| Get Case By ID
+|--------------------------------------------------------------------------
+*/
+
 const getCaseById = async (req, res, next) => {
   try {
-    let officeId;
-
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
-
-      if (!lawyer || !lawyer.officeId) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      officeId = lawyer.officeId;
-    }
-
-    // التأكد من الصلاحية
-    if (!officeId) {
-      throw new AppError("غير مسموح لك بعرض القضية", 403);
-    }
+    const scope = await getUserScope(req);
 
     const { id } = req.params;
 
+    let filter = {
+      _id: id,
+      isArchived: false,
+    };
+
+    // ==================================================
+    // Office Owner
+    // ==================================================
+
+    if (req.user.role === "office_owner") {
+      filter.officeId = scope.officeId;
+    }
+
+    // ==================================================
+    // Lawyer
+    // ==================================================
+
+    if (req.user.role === "lawyer") {
+      filter.lawyers = req.user.id;
+
+      if (scope.officeId) {
+        filter.officeId = scope.officeId;
+      } else {
+        filter.officeId = null;
+      }
+    }
+
     const caseData = await caseModel
-      .findOne({
-        _id: id,
-        officeId: officeId,
-        isArchived: false,
-      })
+      .findOne(filter)
       .populate("clientId", "name phone")
       .populate("lawyers", "name email")
       .populate("caseTypeId", "name")
       .populate("officeId", "name");
 
     if (!caseData) {
-      throw new AppError("لم يتم العثور على القضية", 404);
+      throw new AppError(
+        "لم يتم العثور على القضية",
+        404,
+      );
     }
 
     res.status(200).json({
@@ -245,38 +361,16 @@ const getCaseById = async (req, res, next) => {
     next(e);
   }
 };
+
+/*
+|--------------------------------------------------------------------------
+| Update Case
+|--------------------------------------------------------------------------
+*/
+
 const updateCase = async (req, res, next) => {
   try {
-    let officeId;
-
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
-
-      if (!lawyer || !lawyer.officeId) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      officeId = lawyer.officeId;
-    }
-
-    // التأكد من الصلاحية
-    if (!officeId) {
-      throw new AppError("غير مسموح لك بتعديل القضية", 403);
-    }
+    const scope = await getUserScope(req);
 
     const { id } = req.params;
 
@@ -295,14 +389,54 @@ const updateCase = async (req, res, next) => {
       isArchived,
     } = req.body;
 
+    let filter = {
+      _id: id,
+    };
+
+    // ==================================================
+    // Office Owner
+    // ==================================================
+
+    if (req.user.role === "office_owner") {
+      filter.officeId = scope.officeId;
+    }
+
+    // ==================================================
+    // Lawyer
+    // ==================================================
+
+    if (req.user.role === "lawyer") {
+      filter.lawyers = req.user.id;
+
+      if (scope.officeId) {
+        filter.officeId = scope.officeId;
+      } else {
+        filter.officeId = null;
+      }
+    }
+
+    // ==================================================
+    // تحديد المحامين
+    // ==================================================
+
+    let updatedLawyers = Array.isArray(lawyers)
+      ? lawyers
+      : [];
+
+    // المحامي لا يستطيع إزالة نفسه من القضية
+    if (req.user.role === "lawyer") {
+      updatedLawyers = [req.user.id];
+    }
+
+    // ==================================================
+    // Update
+    // ==================================================
+
     const updatedCase = await caseModel.findOneAndUpdate(
-      {
-        _id: id,
-        officeId: officeId,
-      },
+      filter,
       {
         clientId,
-        lawyers,
+        lawyers: updatedLawyers,
         caseTypeId,
         caseNumber,
         title,
@@ -321,12 +455,18 @@ const updateCase = async (req, res, next) => {
     );
 
     if (!updatedCase) {
-      throw new AppError("لم يتم العثور على القضيه", 404);
+      throw new AppError(
+        "لم يتم العثور على القضية",
+        404,
+      );
     }
 
-    // إضافة Timeline Event
+    // ==================================================
+    // Timeline
+    // ==================================================
+
     await createTimeLine({
-      officeId,
+      officeId: updatedCase.officeId || null,
       caseId: updatedCase._id,
       clientId: updatedCase.clientId,
       type: "case_updated",
@@ -343,4 +483,11 @@ const updateCase = async (req, res, next) => {
     next(e);
   }
 };
-export { handleAddCase, getCases, deleteCase, getCaseById, updateCase };
+
+export {
+  handleAddCase,
+  getCases,
+  deleteCase,
+  getCaseById,
+  updateCase,
+};

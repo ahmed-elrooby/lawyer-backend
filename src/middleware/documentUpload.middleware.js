@@ -6,18 +6,30 @@ const documentUpload = multer({
   storage,
 
   fileFilter: (req, file, cb) => {
-    const allowedTypes = [
-      "application/pdf",
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+   const allowedTypes = [
+  // PDF
+  "application/pdf",
 
-      // بعض العملاء مثل Postman قد يرسلوا الملفات بهذا النوع
-      "application/octet-stream",
-    ];
+  // Word
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 
+  // Excel
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+
+  // PowerPoint
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+
+  // Images
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+
+  // Text
+  "text/plain",
+];
     if (!allowedTypes.includes(file.mimetype)) {
       return cb(new Error(`نوع الملف غير مسموح: ${file.mimetype}`));
     }

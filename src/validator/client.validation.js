@@ -29,7 +29,12 @@ const createClientSchema = Joi.object({
     "string.max": "اسم المدينة يجب ألا يتجاوز 100 حرف",
   }),
 
-  country: Joi.string().trim().max(100).optional().messages({
+ country: Joi.string()
+  .trim()
+  .max(100)
+  .optional()
+  .allow("")
+  .messages({
     "string.max": "اسم الدولة يجب ألا يتجاوز 100 حرف",
   }),
 

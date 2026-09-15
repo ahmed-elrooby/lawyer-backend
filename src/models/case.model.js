@@ -5,7 +5,7 @@ const caseSchema = new mongoose.Schema(
     officeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Office",
-      required: true,
+      default: null,
     },
 
     clientId: {
@@ -83,7 +83,16 @@ const caseSchema = new mongoose.Schema(
   },
 );
 
-caseSchema.index({ officeId: 1, caseNumber: 1 }, { unique: true });
+// الرقم يكون unique داخل المكتب فقط
+caseSchema.index(
+  { officeId: 1, caseNumber: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      officeId: { $type: "objectId" },
+    },
+  },
+);
 
 const caseModel = mongoose.model("Case", caseSchema);
 

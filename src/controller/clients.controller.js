@@ -2,33 +2,144 @@ import ClientModel from "../models/clients.model.js";
 import officeModel from "../models/office.model.js";
 import UserModel from "../models/User.model.js";
 import AppError from "../utils/AppError.js";
+import cloudinary from "../config/cloudinary.js";
 
-const createClient = async (req, res) => {
-  const { name, phone, email, address, city, country, nationalId, notes } =
-    req.body;
+/**
+ * تحديد صلاحية الوصول للعملاء حسب المستخدم
+ *
+ * office_owner
+ * -> كل عملاء مكتبه
+ *
+ * lawyer داخل مكتب
+ * -> كل عملاء مكتبه
+ *
+ * lawyer مستقل
+ * -> العملاء الذين أنشأهم هو فقط
+ */
+const getClientAccessFilter = async (req) => {
+  // صاحب المكتب
+  if (req.user.role === "office_owner") {
+    const office = await officeModel.findOne({
+      Owner_id: req.user.id,
+    });
 
-  try {
-    // 1️⃣ نحدد المكتب حسب المستخدم الحالي
-    let office;
-
-    if (req.user.role === "office_owner") {
-      office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-    }
-
-    if (req.user.role === "lawyer") {
-      const user = await UserModel.findById(req.user.id);
-
-      office = await officeModel.findById(user.officeId);
-    }
-    console.log("USER:", req.user);
-    console.log("OFFICE:", office);
     if (!office) {
       throw new AppError("لم يتم العثور على المكتب", 404);
     }
 
-    // 2️⃣ إنشاء العميل
+    return {
+      officeId: office._id,
+    };
+  }
+
+  // المحامي
+  if (req.user.role === "lawyer") {
+    const lawyer = await UserModel.findById(req.user.id).select("officeId");
+
+    if (!lawyer) {
+      throw new AppError("المستخدم غير موجود", 404);
+    }
+
+    // المحامي تابع لمكتب
+    if (lawyer.officeId) {
+      return {
+        officeId: lawyer.officeId,
+      };
+    }
+
+    // المحامي مستقل
+    return {
+      createdBy: req.user.id,
+      officeId: null,
+    };
+  }
+
+  throw new AppError("غير مصرح لك بالوصول إلى العملاء", 403);
+};
+
+/**
+ * إنشاء عميل
+ */
+const createClient = async (req, res, next) => {
+  const {
+    name,
+    phone,
+    email,
+    address,
+    city,
+    country,
+    nationalId,
+    notes,
+  } = req.body;
+
+  try {
+    let officeId = null;
+
+    // Office Owner
+    if (req.user.role === "office_owner") {
+      const office = await officeModel.findOne({
+        Owner_id: req.user.id,
+      });
+
+      if (!office) {
+        throw new AppError("لم يتم العثور على المكتب", 404);
+      }
+
+      officeId = office._id;
+    }
+
+    // Lawyer
+    if (req.user.role === "lawyer") {
+      const lawyer = await UserModel.findById(req.user.id).select(
+        "officeId",
+      );
+
+      if (!lawyer) {
+        throw new AppError("المستخدم غير موجود", 404);
+      }
+
+      // لو تابع لمكتب هيتخزن المكتب
+      // لو مستقل هتفضل null
+      officeId = lawyer.officeId || null;
+    }
+
+    // التأكد إن الدور مسموح
+    if (!["office_owner", "lawyer"].includes(req.user.role)) {
+      throw new AppError(
+        "غير مصرح لك بإنشاء عميل",
+        403,
+      );
+    }
+
+    // صورة العميل
+    let profileImage = {
+      url: null,
+      publicId: null,
+    };
+
+    if (req.file) {
+      const result = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder: "lawyer-app/clients",
+            resource_type: "image",
+          },
+          (error, result) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve(result);
+            }
+          },
+        );
+
+        uploadStream.end(req.file.buffer);
+      });
+
+      profileImage.url = result.secure_url;
+      profileImage.publicId = result.public_id;
+    }
+
     const client = new ClientModel({
       name,
       phone,
@@ -39,12 +150,16 @@ const createClient = async (req, res) => {
       nationalId,
       notes,
 
-      // Backend هو اللي بيحددهم
-      officeId: office._id,
+      // Backend هو المسؤول عن تحديد المكتب
+      officeId,
+
+      // صاحب العميل
       createdBy: req.user.id,
+
+      // صورة العميل
+      profileImage,
     });
 
-    // 3️⃣ حفظ العميل
     await client.save();
 
     res.status(201).json({
@@ -54,53 +169,28 @@ const createClient = async (req, res) => {
   } catch (e) {
     console.error("Create Client Error:", e);
 
-    // Duplicate nationalId داخل نفس المكتب
     if (e.code === 11000) {
       return res.status(409).json({
-        message: "الرقم القومي مسجل بالفعل في هذا المكتب",
+        message: "الرقم القومي مسجل بالفعل",
       });
     }
 
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
-    });
+    next(e);
   }
 };
 
+/**
+ * جلب كل العملاء
+ */
 const getAllClients = async (req, res, next) => {
   try {
-    let officeId;
+    const filter = await getClientAccessFilter(req);
 
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
-
-      if (!lawyer || !lawyer.officeId) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      officeId = lawyer.officeId;
-    }
-
-    const clients = await ClientModel.find({
-      officeId,
-    })
+    const clients = await ClientModel.find(filter)
       .populate("officeId", "name")
-      .populate("createdBy", "name role");
+      .populate("createdBy", "name role")
+      .sort({ createdAt: -1 });
+
     res.status(200).json({
       clients,
     });
@@ -108,80 +198,22 @@ const getAllClients = async (req, res, next) => {
     next(e);
   }
 };
-const deleteClient = async (req, res, next) => {
-  const { id } = req.params;
 
-  try {
-    let officeId;
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
-
-      if (!lawyer || !lawyer.officeId) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      officeId = lawyer.officeId;
-    }
-    await ClientModel.findByIdAndDelete(id);
-
-    res.status(200).json({
-      message: "تم حذف العميل بنجاح",
-    });
-  } catch (e) {
-    next(e);
-  }
-};
-
+/**
+ * جلب عميل واحد
+ */
 const getClientById = async (req, res, next) => {
   const { id } = req.params;
 
   try {
-    let officeId;
-
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
-
-      if (!lawyer || !lawyer.officeId) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      officeId = lawyer.officeId;
-    }
+    const accessFilter = await getClientAccessFilter(req);
 
     const client = await ClientModel.findOne({
       _id: id,
-      officeId,
+      ...accessFilter,
     })
       .populate("officeId", "name")
-      .populate("createdBy", "name");
+      .populate("createdBy", "name role");
 
     if (!client) {
       throw new AppError("العميل غير موجود", 404);
@@ -195,43 +227,30 @@ const getClientById = async (req, res, next) => {
   }
 };
 
+/**
+ * تحديث عميل
+ */
 const updateClient = async (req, res, next) => {
   const { id } = req.params;
 
-  const { name, phone, email, address, city, country, nationalId, notes } =
-    req.body;
+  const {
+    name,
+    phone,
+    email,
+    address,
+    city,
+    country,
+    nationalId,
+    notes,
+  } = req.body;
 
   try {
-    let officeId;
-
-    // صاحب المكتب
-    if (req.user.role === "office_owner") {
-      const office = await officeModel.findOne({
-        Owner_id: req.user.id,
-      });
-
-      if (!office) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      officeId = office._id;
-    }
-
-    // المحامي
-    if (req.user.role === "lawyer") {
-      const lawyer = await UserModel.findById(req.user.id);
-
-      if (!lawyer || !lawyer.officeId) {
-        throw new AppError("لم يتم العثور على المكتب", 404);
-      }
-
-      officeId = lawyer.officeId;
-    }
+    const accessFilter = await getClientAccessFilter(req);
 
     const client = await ClientModel.findOneAndUpdate(
       {
         _id: id,
-        officeId,
+        ...accessFilter,
       },
       {
         name,
@@ -249,7 +268,7 @@ const updateClient = async (req, res, next) => {
       },
     )
       .populate("officeId", "name")
-      .populate("createdBy", "name");
+      .populate("createdBy", "name role");
 
     if (!client) {
       throw new AppError("العميل غير موجود", 404);
@@ -262,17 +281,39 @@ const updateClient = async (req, res, next) => {
   } catch (e) {
     console.error("Update Client Error:", e);
 
-    // الرقم القومي موجود بالفعل في نفس المكتب
     if (e.code === 11000) {
       return res.status(409).json({
-        message: "الرقم القومي مسجل بالفعل في هذا المكتب",
+        message: "الرقم القومي مسجل بالفعل",
       });
     }
 
-    res.status(500).json({
-      message: "حدث خطأ في السيرفر",
-      error: e.message,
+    next(e);
+  }
+};
+
+/**
+ * حذف عميل
+ */
+const deleteClient = async (req, res, next) => {
+  const { id } = req.params;
+
+  try {
+    const accessFilter = await getClientAccessFilter(req);
+
+    const client = await ClientModel.findOneAndDelete({
+      _id: id,
+      ...accessFilter,
     });
+
+    if (!client) {
+      throw new AppError("العميل غير موجود", 404);
+    }
+
+    res.status(200).json({
+      message: "تم حذف العميل بنجاح",
+    });
+  } catch (e) {
+    next(e);
   }
 };
 

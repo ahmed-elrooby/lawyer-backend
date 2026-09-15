@@ -5,7 +5,7 @@ const sessionSchema = new mongoose.Schema(
     officeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Office",
-      required: true,
+      default: null,
     },
 
     caseId: {
@@ -33,7 +33,13 @@ const sessionSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["scheduled", "attended", "postponed", "completed", "cancelled"],
+      enum: [
+        "scheduled",
+        "attended",
+        "postponed",
+        "completed",
+        "cancelled",
+      ],
       default: "scheduled",
     },
 
@@ -59,6 +65,13 @@ const sessionSchema = new mongoose.Schema(
   },
 );
 
+/**
+ * منع تكرار نفس الجلسة داخل المكتب
+ *
+ * بالنسبة للمحامي المستقل:
+ * officeId = null
+ * وبالتالي لا نعتمد على هذا الـ index وحده
+ */
 sessionSchema.index(
   {
     officeId: 1,
@@ -68,7 +81,13 @@ sessionSchema.index(
   },
   {
     unique: true,
+    partialFilterExpression: {
+      officeId: { $type: "objectId" },
+    },
   },
 );
 
-export default mongoose.model("Session", sessionSchema);
+const SessionModel =
+  mongoose.models.Session || mongoose.model("Session", sessionSchema);
+
+export default SessionModel;

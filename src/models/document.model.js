@@ -5,7 +5,7 @@ const attachmentSchema = new mongoose.Schema(
     officeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Office",
-      required: true,
+      default: null,
     },
 
     caseId: {
@@ -78,6 +78,7 @@ const attachmentSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+
     extension: {
       type: String,
       required: true,
@@ -89,6 +90,8 @@ const attachmentSchema = new mongoose.Schema(
   },
 );
 
-const AttachmentModel = mongoose.model("Attachment", attachmentSchema);
+const AttachmentModel =
+  mongoose.models.Attachment ||
+  mongoose.model("Attachment", attachmentSchema);
 
 export default AttachmentModel;

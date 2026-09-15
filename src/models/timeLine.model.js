@@ -2,11 +2,11 @@ import mongoose from "mongoose";
 
 const timeLineSchema = new mongoose.Schema(
   {
-    officeId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Office",
-      required: true,
-    },
+officeId: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "Office",
+  default: null,
+},
 
     caseId: {
       type: mongoose.Schema.Types.ObjectId,

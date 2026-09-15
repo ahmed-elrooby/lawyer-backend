@@ -1,4 +1,5 @@
 import express from "express";
+
 import {
   createClient,
   deleteClient,
@@ -6,13 +7,17 @@ import {
   getClientById,
   updateClient,
 } from "../controller/clients.controller.js";
+
 import authMiddleware from "./../middleware/auth.middleware.js";
 import roleMiddleware from "./../middleware/role.middleware.js";
 import validate from "../middleware/validate.js";
+
 import {
   createClientSchema,
   updateClientSchema,
 } from "../validator/client.validation.js";
+import upload from "../middleware/upload.middleware.js";
+
 
 const clientRouter = express.Router();
 
@@ -21,10 +26,15 @@ clientRouter
   .post(
     authMiddleware,
     roleMiddleware("office_owner", "lawyer"),
+    upload.single("profileImage"),
     validate(createClientSchema),
     createClient,
   )
-  .get(authMiddleware, roleMiddleware("lawyer", "office_owner"), getAllClients);
+  .get(
+    authMiddleware,
+    roleMiddleware("lawyer", "office_owner"),
+    getAllClients,
+  );
 
 clientRouter
   .route("/clients/:id")
@@ -33,11 +43,15 @@ clientRouter
     roleMiddleware("office_owner", "lawyer"),
     deleteClient,
   )
-  .get(authMiddleware, roleMiddleware("office_owner", "lawyer"), getClientById)
-
+  .get(
+    authMiddleware,
+    roleMiddleware("office_owner", "lawyer"),
+    getClientById,
+  )
   .put(
     authMiddleware,
     roleMiddleware("office_owner", "lawyer"),
+    upload.single("profileImage"),
     validate(updateClientSchema),
     updateClient,
   );
