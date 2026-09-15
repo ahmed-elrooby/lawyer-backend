@@ -2,6 +2,8 @@ import officeModel from "../models/office.model.js";
 import UserModel from "../models/User.model.js";
 import AppError from "./AppError.js";
 
+
+
 const getCaseTypeOwner = async (userId) => {
   const user = await UserModel.findById(userId);
 
@@ -33,7 +35,7 @@ const getCaseTypeOwner = async (userId) => {
   if (user.role === "lawyer") {
     // Lawyer داخل مكتب
     if (user.officeId) {
-      const office = await OfficeModel.findById(user.officeId);
+      const office = await officeModel.findById(user.officeId);
 
       if (!office) {
         throw new AppError("المكتب غير موجود", 404);
